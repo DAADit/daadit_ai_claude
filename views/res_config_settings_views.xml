@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="res_config_settings_view_form_inherit_daadit_ai_claude" model="ir.ui.view">
+        <field name="name">res.config.settings.view.form.inherit.daadit_ai_claude</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="ai_app.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//block[@name='ai_providers']" position="inside">
+                <setting id="claude_provider"
+                         string="Use your own Anthropic Claude account"
+                         help="Provide your Anthropic API key (starts with sk-ant-) to connect with your Claude account"
+                         groups="base.group_system">
+                    <field name="claude_key_enabled"/>
+                    <div invisible="not claude_key_enabled">
+                        <div class="flex-grow-1">
+                            <field name="claude_key"
+                                   placeholder="sk-ant-..."
+                                   password="True"
+                                   nolabel="1"
+                                   class="w-100"/>
+                        </div>
+                        <div class="text-muted mt8 mb8">
+                            <i class="fa fa-info-circle me-1"/>
+                            Get an Anthropic API key at
+                            <a href="https://console.anthropic.com/settings/keys"
+                               target="_blank" rel="noopener">console.anthropic.com/settings/keys</a>
+                            (sign in → add a billing method →
+                            <strong>Create Key</strong> → copy the value
+                            shown once). The key starts with <code>sk-ant-</code>.
+                        </div>
+                        <group>
+                            <field name="claude_base_url"
+                                   string="Anthropic API base URL"
+                                   placeholder="https://api.anthropic.com/v1"/>
+                            <field name="claude_api_version"
+                                   string="Anthropic API version"
+                                   placeholder="2023-06-01"/>
+                            <field name="claude_timeout"
+                                   string="Anthropic request timeout (s)"/>
+                        </group>
+                    </div>
+                </setting>
+            </xpath>
+        </field>
+    </record>
+</odoo>

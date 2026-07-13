@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        GDPR Art. 17 (right to erasure) button on res.partner form for
+        the Claude usage history.
+
+        The stock res.partner form has no <header>, so we inject one
+        before <sheet>. If other modules add their own headers on the
+        same hook, Odoo merges them and the user sees all buttons side
+        by side.
+    -->
+    <record id="view_res_partner_form_daadit_claude_erase" model="ir.ui.view">
+        <field name="name">res.partner.form.daadit_ai_claude_gdpr_erase</field>
+        <field name="model">res.partner</field>
+        <field name="inherit_id" ref="base.view_partner_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="before">
+                <header>
+                    <button name="action_daadit_claude_gdpr_erase"
+                            type="object"
+                            string="Erase Claude usage (GDPR)"
+                            class="btn-warning"
+                            groups="base.group_system"
+                            confirm="This anonymises every Claude usage row tied to this partner's user(s) — token counts and cost figures stay (no PII), only the user link is removed. This action is logged and cannot be undone. Continue?"
+                            help="GDPR Art. 17 — anonymises Claude cost-tracking entries while keeping aggregate cost data intact. Available to system administrators only."/>
+                </header>
+            </xpath>
+        </field>
+    </record>
+
+</odoo>

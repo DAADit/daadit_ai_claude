@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!--
+        Inherit the stock ai.agent form (ai_app.ai_agent_view_form) and
+        append a "Claude provider settings" notebook tab. Only visible
+        when the agent's llm_model is a Claude option.
+    -->
+
+    <record id="ai_agent_view_form_inherit_daadit_claude" model="ir.ui.view">
+        <field name="name">ai.agent.view.form.inherit.daadit_ai_claude</field>
+        <field name="model">ai.agent</field>
+        <field name="inherit_id" ref="ai_app.ai_agent_view_form"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//form//sheet" position="inside">
+
+                <separator string="Claude provider settings"
+                           invisible="llm_model not in ('claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5')"/>
+
+                <group invisible="llm_model not in ('claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5')">
+
+                    <group string="Generation overrides">
+                        <field name="daadit_claude_temperature_active"/>
+                        <field name="daadit_claude_temperature"
+                               invisible="not daadit_claude_temperature_active"/>
+                        <field name="daadit_claude_max_tokens"/>
+                    </group>
+
+                </group>
+
+                <separator string="Allowed models"
+                           invisible="llm_model not in ('claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5')"/>
+
+                <div invisible="llm_model not in ('claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5')">
+                    <p class="text-muted">
+                        Empty = unrestricted (the agent can query any
+                        model the calling user has read rights on).
+                        Click "Apply suggested" to start with a curated
+                        list of common business models.
+                    </p>
+                    <div class="mb-2">
+                        <button name="action_daadit_apply_suggested_allowed_models"
+                                type="object"
+                                string="Apply suggested business models"
+                                class="btn btn-secondary"
+                                icon="fa-magic"/>
+                        <button name="action_daadit_clear_allowed_models"
+                                type="object"
+                                string="Clear (allow all)"
+                                class="btn btn-link"
+                                confirm="Clear the allowed-models list? An empty list means the agent can access any model the calling user has read rights on."/>
+                    </div>
+                    <field name="daadit_allowed_model_ids"
+                           nolabel="1"
+                           options="{'no_create': True}"
+                           widget="many2many_tags"/>
+                </div>
+
+                <separator string="Blocked models"
+                           invisible="llm_model not in ('claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5')"/>
+
+                <div invisible="llm_model not in ('claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5')">
+                    <p class="text-muted">
+                        Models the agent must never query, regardless
+                        of the allowed list. Blocked always wins.
+                    </p>
+                    <div class="mb-2">
+                        <button name="action_daadit_apply_default_blocked_models"
+                                type="object"
+                                string="Apply default block list"
+                                class="btn btn-secondary"
+                                icon="fa-shield"/>
+                        <button name="action_daadit_clear_blocked_models"
+                                type="object"
+                                string="Clear"
+                                class="btn btn-link"/>
+                    </div>
+                    <field name="daadit_blocked_model_ids"
+                           nolabel="1"
+                           options="{'no_create': True}"
+                           widget="many2many_tags"/>
+                </div>
+
+                <separator string="Field-level privacy blocklist"
+                           invisible="llm_model not in ('claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5')"/>
+
+                <div invisible="llm_model not in ('claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-5', 'claude-sonnet-4-5', 'claude-haiku-4-5')">
+                    <p class="text-muted">
+                        Comma-separated <code>model.field</code> entries
+                        the agent must never expose. Scrubbed from tool
+                        results; filter / groupby / aggregate references
+                        on these fields are rejected.
+                    </p>
+                    <field name="daadit_field_blocklist"
+                           nolabel="1"
+                           placeholder="res.partner.vat,hr.employee.identification_id"/>
+                </div>
+
+            </xpath>
+
+        </field>
+    </record>
+
+</odoo>
