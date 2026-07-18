@@ -1,0 +1,156 @@
+<section class="oe_container">
+    <div class="oe_row oe_spaced" style="text-align: center; padding: 40px 0;">
+        <h1 style="margin: 0; font-size: 42px;">DAADit AI — Claude (Anthropic) Provider</h1>
+        <h3 style="color: #CC785C; font-weight: 400; margin-top: 8px;">
+            Anthropic's Claude models as a first-class provider in Odoo 19 Enterprise's built-in AI.
+        </h3>
+    </div>
+</section>
+
+<section class="oe_container" style="background-color: #F0EEE6; padding: 40px 0;">
+    <div class="oe_row oe_spaced" style="max-width: 900px; margin: 0 auto;">
+        <h2 style="text-align: center; margin-bottom: 24px;">What this module does</h2>
+        <p style="font-size: 17px; line-height: 1.6; text-align: center;">
+            Adds Anthropic's <b>Claude</b> models — Opus, Sonnet, and Haiku — as an LLM provider for the standard Odoo 19 Enterprise <code>ai</code> module.
+            Your AI agents, chatbots, and Discuss integrations can now dispatch chat and tool calls directly to
+            <code>api.anthropic.com</code> using your own Anthropic account.
+            Existing topic configurations, tool actions, and RAG sources keep working — this module plugs in as an
+            additional provider option, not a replacement.
+        </p>
+    </div>
+</section>
+
+<section class="oe_container" style="padding: 40px 0;">
+    <div class="oe_row oe_spaced" style="max-width: 1000px; margin: 0 auto;">
+        <h2 style="text-align: center; margin-bottom: 32px;">Key features</h2>
+
+        <div class="row">
+            <div class="col-md-6" style="padding: 16px;">
+                <h4>🤖 Full Claude model lineup</h4>
+                <p>
+                    Adds Claude Opus, Claude Sonnet, and Claude Haiku (4.5 &amp; 4.6/4.7 families) to the <code>ai.agent</code> LLM Model dropdown.
+                    Requests go to Anthropic's <code>/v1/messages</code> endpoint using your key from <code>console.anthropic.com</code>.
+                </p>
+            </div>
+            <div class="col-md-6" style="padding: 16px;">
+                <h4>🛠 Tool calling with proper schemas</h4>
+                <p>
+                    All ten standard Odoo AI tools (Search, Read Group, Get Fields, Open Menu *) are exposed to Claude with typed JSON Schema
+                    definitions. Multi-turn <code>tool_use → tool_result</code> loops run automatically until Claude returns a final text
+                    response or a 6-iteration safety cap is hit.
+                </p>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6" style="padding: 16px;">
+                <h4>🛡️ Per-agent access control</h4>
+                <p>
+                    <b>Allowed-models</b> and <b>blocked-models</b> lists on every agent constrain which Odoo models Claude can query via tools.
+                    One-click presets fill in curated business-model / sensitive-system-model lists so admins don't have to type technical names.
+                </p>
+            </div>
+            <div class="col-md-6" style="padding: 16px;">
+                <h4>🔒 Field-level PII blocklist</h4>
+                <p>
+                    Configure <code>model.field</code> entries that must never leave the agent. Matches are scrubbed from tool results and
+                    filter/groupby/aggregate clauses referencing them are rejected — so an LLM can't binary-search a value through the
+                    query.
+                </p>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6" style="padding: 16px;">
+                <h4>📊 Usage tracking &amp; cost estimation</h4>
+                <p>
+                    Every chat call writes a row to <code>daadit_ai_claude.usage</code> with token counts, iteration count,
+                    tool-usage flag, and an estimated USD cost per Anthropic's public price list.
+                    Pricing is overridable via <code>ir.config_parameter</code> when Anthropic updates their rates.
+                </p>
+            </div>
+            <div class="col-md-6" style="padding: 16px;">
+                <h4>⚖️ GDPR-ready erase button</h4>
+                <p>
+                    Partner form gains an <b>Erase Claude usage (GDPR)</b> button that anonymises the user link on all usage rows
+                    tied to that partner's internal users — token counts and cost figures kept for aggregate reporting.
+                </p>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-6" style="padding: 16px;">
+                <h4>🌐 URL allowlist for the API key</h4>
+                <p>
+                    The base URL is validated against a strict allowlist before any request is sent, so a tampered
+                    <code>ir.config_parameter</code> row cannot exfiltrate your API key to an untrusted host.
+                </p>
+            </div>
+            <div class="col-md-6" style="padding: 16px;">
+                <h4>🗣️ Language mirroring</h4>
+                <p>
+                    The dispatch layer appends a language-mirror instruction to the system prompt so smaller Claude models reliably reply
+                    in the user's language (Dutch, French, German, …) even when the agent's system prompt is in English.
+                </p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="oe_container" style="background-color: #F0EEE6; padding: 40px 0;">
+    <div class="oe_row oe_spaced" style="max-width: 900px; margin: 0 auto;">
+        <h2 style="text-align: center; margin-bottom: 24px;">How it fits together</h2>
+        <p style="font-size: 16px; line-height: 1.6;">
+            When an AI agent is configured with a Claude model, its chat calls take a different path than the OpenAI/Gemini defaults:
+        </p>
+        <ul style="font-size: 16px; line-height: 1.7;">
+            <li><b>Chat</b> — routes to <code>POST /v1/messages</code> on <code>api.anthropic.com</code> with your key.</li>
+            <li><b>Tool calls</b> — converted to Anthropic's <code>input_schema</code> envelope; results echoed back as <code>tool_result</code> content blocks.</li>
+            <li><b>Embeddings</b> — Anthropic does not offer an embeddings API. The module deflects the embedding-model lookup to <code>text-embedding-3-small</code> so RAG/Sources keep working through the OpenAI/IAP path that stock Odoo already uses. Chat runs on Claude, embeddings run on whichever provider you have configured for them.</li>
+        </ul>
+    </div>
+</section>
+
+<section class="oe_container" style="padding: 40px 0;">
+    <div class="oe_row oe_spaced" style="max-width: 900px; margin: 0 auto;">
+        <h2 style="text-align: center; margin-bottom: 24px;">Set-up in 5 steps</h2>
+        <ol style="font-size: 16px; line-height: 1.8;">
+            <li>Install this module from the Apps screen.</li>
+            <li>Open <b>Settings → General Settings → AI</b>.</li>
+            <li>Toggle <b>Use your own Anthropic Claude account</b> on and paste your API key from
+                <a href="https://console.anthropic.com/settings/keys">console.anthropic.com/settings/keys</a>
+                (keys start with <code>sk-ant-</code>).</li>
+            <li>Save.</li>
+            <li>Open any <b>AI Agent</b>, pick a Claude model (e.g. Sonnet 4.6 as a balanced default), and try a prompt.</li>
+        </ol>
+        <p style="text-align: center; margin-top: 24px; font-style: italic;">
+            Existing agents on other providers keep working unchanged.
+        </p>
+    </div>
+</section>
+
+<section class="oe_container" style="background-color: #F0EEE6; padding: 40px 0;">
+    <div class="oe_row oe_spaced" style="max-width: 900px; margin: 0 auto;">
+        <h2 style="text-align: center; margin-bottom: 24px;">Requirements</h2>
+        <ul style="font-size: 16px; line-height: 1.8;">
+            <li><b>Odoo 19 Enterprise</b> — depends on the stock <code>ai</code> and <code>ai_app</code> modules.</li>
+            <li>An <b>Anthropic account</b> with billing set up at <code>console.anthropic.com</code> (Anthropic bills you directly for chat token usage; this module only routes the call).</li>
+            <li>Python's <code>requests</code> library (already present in any standard Odoo install).</li>
+            <li>Outbound HTTPS to <code>api.anthropic.com</code> from the Odoo server.</li>
+        </ul>
+    </div>
+</section>
+
+<section class="oe_container" style="padding: 40px 0;">
+    <div class="oe_row oe_spaced" style="max-width: 900px; margin: 0 auto;">
+        <h2 style="text-align: center; margin-bottom: 24px;">About DAADit</h2>
+        <p style="font-size: 16px; line-height: 1.6; text-align: center;">
+            DAADit is an Odoo integration partner focused on secure, GDPR-conscious AI deployments in ERP environments.
+            Visit <a href="https://daadit.group">daadit.group</a> for other modules and consulting.
+        </p>
+        <p style="font-size: 14px; line-height: 1.6; text-align: center; margin-top: 16px; color: #666;">
+            Anthropic and Claude are trademarks of Anthropic, PBC. This module is an independent integration and is not affiliated with or endorsed by Anthropic.
+            Odoo is a trademark of Odoo S.A.
+        </p>
+    </div>
+</section>

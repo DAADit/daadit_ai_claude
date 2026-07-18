@@ -11,33 +11,30 @@ built-in `ai` module, alongside OpenAI (ChatGPT) and Google (Gemini).
   - `claude-opus-4-7` — Claude Opus 4.7 (most capable)
   - `claude-sonnet-4-6` — Claude Sonnet 4.6 (balanced)
   - `claude-haiku-4-5-20251001` — Claude Haiku 4.5 (fastest / cheapest)
-  - `claude-opus-4-5`, `claude-sonnet-4-5`, `claude-haiku-4-5` (older snapshots)
-- Routes any agent whose `llm_model` is a Claude option to
-  `https://api.anthropic.com/v1/messages` instead of Odoo IAP.
-- Maps the agent's response style to a Claude `temperature` unless the agent's
-  `daadit_claude_temperature_active` flag is set (in which case the per-agent
-  override wins).
+  - `claude-opus-4-5`, `claude-sonnet-4-5`, `claude-haiku-4-5` (older snapshots
+    kept for compatibility with existing agent records).
+- Routes agents whose `llm_model` is a Claude option to
+  `https://api.anthropic.com/v1/messages` using your Anthropic key.
 
 ### Tool calling / Topics (`ai.topic` + server actions)
 
-- Passes the agent's tools through to Claude in Anthropic's `input_schema`
-  envelope.
-- Builds tool definitions for the standard 10 Odoo AI tools (Search, Read
-  Group, Get Fields, Open Menu * etc.) from the schemas in
-  `services/tool_dispatch.py`.
+- All ten standard Odoo AI tools (Search, Read Group, Get Fields, Open Menu *)
+  are exposed to Claude with typed JSON Schema definitions.
 - Runs Anthropic's `tool_use → tool_result` loop until Claude returns a final
-  text response or a 6-iteration cap is hit.
+  text response or a 6-iteration safety cap is hit.
 - Per-tool security gates:
   - **Allowed-models / blocked-models** lists on the agent record.
   - **Field-level blocklist** (`daadit_field_blocklist`) for PII scrubbing on
     tool results and rejection of filter / groupby / aggregate clauses that
     reference blocked fields.
 
-### Embeddings — **NOT supported**
+### Embeddings — **NOT supported by Anthropic**
 
-Anthropic does not offer an embeddings API. RAG / Sources should keep running
-on whichever embedding provider Odoo already supports in your install. This
-module does **not** add Claude to the `ai.embedding.embedding_model` selection.
+Anthropic does not offer an embeddings API. The module deflects the
+embedding-model lookup to `text-embedding-3-small` so RAG / Sources keep
+running through whichever embedding provider Odoo already has configured
+(OpenAI direct key or IAP). Chat runs on Anthropic; embeddings run on the
+existing provider — no changes to your Sources setup required.
 
 ### Usage tracking + GDPR
 
@@ -52,32 +49,29 @@ module does **not** add Claude to the `ai.embedding.embedding_model` selection.
 ### Settings UI
 
 - Adds an **Anthropic** provider block under **Settings → General Settings →
-  AI**, with a coral accent border so it's unmistakably identified as the
-  Claude provider.
+  AI** next to the other AI provider blocks.
 - Toggle → key field → link to `console.anthropic.com`.
-- Extra advanced fields: base URL, API version, request timeout.
+- Advanced fields: base URL, API version, request timeout.
 - All values stored in `ir.config_parameter` under the `daadit_ai_claude.*`
   namespace; only visible to `base.group_system`.
 
 ## Install
 
-This is a custom Odoo module — install via Odoo.sh or a local Odoo build, not
-through XML-RPC.
-
-1. Push the `daadit_ai_claude` folder into your Odoo.sh repo, e.g. under
-   `enterprise_custom_addons/` or wherever your custom addons live.
-2. Commit and push to your dev / staging branch first.
-3. On Odoo.sh, watch the build. Once green, open the database and update the
-   apps list, then install **DAADit AI — Claude (Anthropic) Provider**.
+1. Copy the `daadit_ai_claude` folder into your Odoo addons path (Odoo.sh
+   custom-addons repo, `extra_addons/`, or wherever your install expects
+   custom modules to live).
+2. Restart the Odoo server (or trigger an Odoo.sh build).
+3. Open **Apps**, update the apps list, and install
+   **DAADit AI — Claude (Anthropic) Provider**.
 4. Open **Settings → General Settings → AI**, toggle **Use your own Anthropic
    account**, paste the key from <https://console.anthropic.com/settings/keys>,
    save.
 5. Edit (or create) an `ai.agent`, set **LLM Model** to one of the Claude
    options (e.g. `claude-sonnet-4-6`), save, and try a prompt.
 
-## ⚠️ Recovery: "No provider found for the selected model" at registry load
+## Recovery: "No provider found for the selected model"
 
-If a build ever fails with this in the log:
+If an Odoo build ever fails with this in the log:
 
 ```
 File "/home/odoo/src/enterprise/ai/utils/llm_providers.py", line 72, in get_provider
@@ -85,9 +79,9 @@ File "/home/odoo/src/enterprise/ai/utils/llm_providers.py", line 72, in get_prov
 ```
 
 …during loading of `enterprise/ai/data/ai_agent_data.xml`, the database has
-a Claude value in `ai_agent.llm_model` that stock can't process. Stock's
-data load runs *before* our `_inherit` extensions are merged into
-`ai.agent`, so our `_get_provider` override isn't yet in effect.
+a Claude value in `ai_agent.llm_model` that stock can't process. Stock's data
+load runs *before* the `_inherit` extensions are merged into `ai.agent`, so
+the `_get_provider` override isn't yet active.
 
 **Unblock**: connect to the DB and run
 
@@ -97,9 +91,8 @@ UPDATE ai_agent
  WHERE llm_model LIKE 'claude-%';
 ```
 
-…then trigger a rebuild. After this, the module's `uninstall_hook` and
-`pre_init_hook` keep the DB from getting stuck on the next install/uninstall
-cycle.
+…then trigger a rebuild. The module's `uninstall_hook` and `pre_init_hook`
+keep the DB from getting stuck on subsequent install/uninstall cycles.
 
 ## Configuration reference
 
@@ -120,11 +113,15 @@ All values stored in `ir.config_parameter`:
 
 ## Compatibility
 
-Designed for Odoo 19 Enterprise. The provider plumbing uses defensive
-registry-patching so it only intercepts calls whose `llm_model` starts with
-`claude-` — other AI provider modules can be installed side-by-side without
-conflict.
+Designed for **Odoo 19 Enterprise**. The provider plumbing uses defensive
+patterns so it only intercepts calls whose `llm_model` starts with `claude-`
+— other AI provider modules can be installed side-by-side without conflict.
 
 ## License
 
-LGPL-3 — see top of each source file.
+LGPL-3 — see the `LICENSE` file. Anthropic API usage is billed by Anthropic
+directly to the customer; this module only routes the calls.
+
+## Support
+
+For issues, feature requests, or consulting: <https://daadit.group>
