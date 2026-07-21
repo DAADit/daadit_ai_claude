@@ -8,32 +8,32 @@
     <data noupdate="1">
         <record id="model_claude_opus_4_7" model="daadit.ai.claude.model">
             <field name="technical_name">claude-opus-4-7</field>
-            <field name="display_name">Claude Opus 4.7</field>
+            <field name="label">Claude Opus 4.7</field>
             <field name="sequence">1</field>
         </record>
         <record id="model_claude_sonnet_4_6" model="daadit.ai.claude.model">
             <field name="technical_name">claude-sonnet-4-6</field>
-            <field name="display_name">Claude Sonnet 4.6</field>
+            <field name="label">Claude Sonnet 4.6</field>
             <field name="sequence">2</field>
         </record>
         <record id="model_claude_haiku_4_5_snapshot" model="daadit.ai.claude.model">
             <field name="technical_name">claude-haiku-4-5-20251001</field>
-            <field name="display_name">Claude Haiku 4.5</field>
+            <field name="label">Claude Haiku 4.5</field>
             <field name="sequence">3</field>
         </record>
         <record id="model_claude_opus_4_5" model="daadit.ai.claude.model">
             <field name="technical_name">claude-opus-4-5</field>
-            <field name="display_name">Claude Opus 4.5</field>
+            <field name="label">Claude Opus 4.5</field>
             <field name="sequence">4</field>
         </record>
         <record id="model_claude_sonnet_4_5" model="daadit.ai.claude.model">
             <field name="technical_name">claude-sonnet-4-5</field>
-            <field name="display_name">Claude Sonnet 4.5</field>
+            <field name="label">Claude Sonnet 4.5</field>
             <field name="sequence">5</field>
         </record>
         <record id="model_claude_haiku_4_5" model="daadit.ai.claude.model">
             <field name="technical_name">claude-haiku-4-5</field>
-            <field name="display_name">Claude Haiku 4.5 (rolling)</field>
+            <field name="label">Claude Haiku 4.5 (rolling)</field>
             <field name="sequence">6</field>
         </record>
     </data>
