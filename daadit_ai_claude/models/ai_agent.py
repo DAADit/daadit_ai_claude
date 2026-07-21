@@ -402,6 +402,35 @@ class AIAgent(models.Model):
         return ClaudeClient.extract_text(resp)
 
     # ------------------------------------------------------------------ #
+    # AI tool: research (marketing flow)                                 #
+    #                                                                    #
+    # DAADit's tool dispatch (daadit_ai_mistral/_ai_claude) runs tools   #
+    # as ``_ai_tool_<fn>`` methods on ai.agent, NOT as the server-action #
+    # ``code`` block. So the "research" tool a coordinator agent (Mark)  #
+    # calls resolves here. We delegate to the Vince sub-agent, which     #
+    # runs Claude with server-side web_search for real online research.  #
+    # ------------------------------------------------------------------ #
+    def _ai_tool_research(self, topic_hint=None, **kwargs):
+        vince = self.env["ai.agent"].sudo().search(
+            [("name", "=", "Vince")], limit=1,
+        )
+        if not vince:
+            return {"ok": False,
+                    "error": "Research-sub-agent 'Vince' niet gevonden."}
+        prompt = (
+            "Zoek online de 5 sterkste, actuele hot topics voor een blog- "
+            "of social-post over: %s\nGeef een genummerde lijst (1-5), elk "
+            "met: titel, één zin waarom dit nú relevant is, en een bron-URL. "
+            "Zet het sterkste topic op 1." % (topic_hint or "")
+        )
+        try:
+            topics = vince._daadit_claude_research(prompt, max_uses=5)
+        except Exception as exc:  # noqa: BLE001
+            _logger.exception("daadit_ai_claude: _ai_tool_research failed")
+            return {"ok": False, "error": "Online research mislukt: %s" % exc}
+        return {"ok": True, "topics": topics}
+
+    # ------------------------------------------------------------------ #
     # Selection callable                                                 #
     # ------------------------------------------------------------------ #
     @api.model
