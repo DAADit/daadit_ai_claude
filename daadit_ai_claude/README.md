@@ -94,6 +94,34 @@ UPDATE ai_agent
 …then trigger a rebuild. The module's `uninstall_hook` and `pre_init_hook`
 keep the DB from getting stuck on subsequent install/uninstall cycles.
 
+## Web research (`_daadit_claude_research`)
+
+`ai.agent._daadit_claude_research(prompt, max_uses=5)` runs the agent as
+a one-shot Claude call with Anthropic's server-side **web_search** tool
+and returns the answer text (with source URLs when the prompt asks for
+them). This gives orchestrating agents real, up-to-date online research
+instead of model-memory guesses — e.g. a marketing manager agent calling
+a research agent ("find the current hot topics for a blog post on X").
+The called agent's `system_prompt` frames the role; `max_uses` caps how
+many searches Claude may run. Requires the Anthropic key to be enabled.
+
+## Dynamic model list (auto-sync)
+
+The Claude models offered in the agent's **LLM Model** dropdown are no
+longer a hardcoded list. They live in the `daadit.ai.claude.model`
+registry, which is refreshed from the Anthropic `GET /v1/models` API:
+
+* **Daily** — a scheduled action (`ir.cron`) syncs the list, so a newly
+  released Claude model appears on its own without a redeploy.
+* **On demand** — *Settings → AI → Refresh Claude model list*, or the
+  *Refresh from Anthropic* button under **AI → Configuration → Claude
+  Models**.
+
+A built-in seed keeps the dropdown usable before the first sync (fresh
+install, no key yet, or API unreachable). Untick a row's *Active* flag
+to hide a model without breaking agents that still reference it. The
+sync only runs when the Anthropic key is enabled.
+
 ## Configuration reference
 
 All values stored in `ir.config_parameter`:
