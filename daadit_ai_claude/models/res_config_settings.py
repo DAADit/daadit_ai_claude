@@ -180,3 +180,16 @@ class ResConfigSettings(models.TransientModel):
                 "allowlist. Allowed hosts: %(allowed)s.",
                 host=host, allowed=", ".join(sorted(allowed)),
             ))
+
+    # ------------------------------------------------------------------
+    # Model list — manual refresh from the settings screen
+    #
+    # The Claude model dropdown on ai.agent is fed from the live
+    # ``daadit.ai.claude.model`` registry, refreshed daily by cron. This
+    # button lets an admin pull the current list on demand (e.g. right
+    # after Anthropic announces a new model). Runs against the SAVED
+    # configuration, so save the key first if you just entered it.
+    # ------------------------------------------------------------------
+    def action_daadit_claude_sync_models(self):
+        self.ensure_one()
+        return self.env["daadit.ai.claude.model"].sudo().action_sync_now()

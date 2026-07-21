@@ -361,6 +361,47 @@ class AIAgent(models.Model):
         return True
 
     # ------------------------------------------------------------------ #
+    # Web research (Anthropic server-side web_search)                    #
+    # ------------------------------------------------------------------ #
+    def _daadit_claude_research(self, prompt, max_uses=5, max_tokens=None):
+        """Run THIS agent as a one-shot Claude call with Anthropic's
+        server-side ``web_search`` tool and return the answer text.
+
+        Lets an orchestrating agent (e.g. Mark → Vince) get REAL,
+        up-to-date online research instead of model-memory guesses:
+        Claude performs the web searches server-side and the returned
+        text carries the findings (with source URLs when the prompt
+        asks for them). The agent's ``system_prompt`` frames the role.
+
+        Requires the Anthropic key to be enabled (``ClaudeClient.
+        from_env`` raises a clear UserError otherwise). ``max_uses``
+        caps how many searches Claude may run (cost control).
+        """
+        self.ensure_one()
+        from ..services.claude_client import ClaudeClient
+
+        client = ClaudeClient.from_env(self.env)
+        model = self.llm_model if is_claude_model(self.llm_model) \
+            else "claude-sonnet-4-6"
+        try:
+            uses = max(1, min(int(max_uses or 5), 10))
+        except (TypeError, ValueError):
+            uses = 5
+        tools = [{
+            "type": "web_search_20250305",
+            "name": "web_search",
+            "max_uses": uses,
+        }]
+        resp = client.create_message(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            system=self.system_prompt or None,
+            tools=tools,
+            max_tokens=max_tokens or self.daadit_claude_max_tokens or 4000,
+        )
+        return ClaudeClient.extract_text(resp)
+
+    # ------------------------------------------------------------------ #
     # Selection callable                                                 #
     # ------------------------------------------------------------------ #
     @api.model
@@ -391,10 +432,27 @@ class AIAgent(models.Model):
                     "selection method; OpenAI/Gemini entries may be missing."
                 )
         existing_keys = {value for value, _label in base}
+        # Dynamic source: the live-synced registry (daadit.ai.claude.model),
+        # refreshed daily from the Anthropic /v1/models API and via the
+        # manual "Refresh models" button. Newly-released Claude models
+        # appear here automatically — no redeploy needed. Fall back to the
+        # built-in seed constant when the table is empty or unreachable
+        # (fresh install/upgrade before seed data loads, or a DB error).
+        entries = []
+        try:
+            entries = self.env["daadit.ai.claude.model"].sudo()._selection_entries()
+        except Exception:  # noqa: BLE001
+            _logger.debug(
+                "daadit_ai_claude: model registry unavailable; using seed",
+                exc_info=True,
+            )
+        if not entries:
+            entries = list(CLAUDE_MODEL_SELECTION)
         added = 0
-        for value, label in CLAUDE_MODEL_SELECTION:
+        for value, label in entries:
             if value not in existing_keys:
                 base.append((value, label))
+                existing_keys.add(value)
                 added += 1
         _logger.debug(
             "daadit_ai_claude: _get_llm_model_selection extended with %d "
