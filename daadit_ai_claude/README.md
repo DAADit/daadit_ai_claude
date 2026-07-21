@@ -94,6 +94,23 @@ UPDATE ai_agent
 …then trigger a rebuild. The module's `uninstall_hook` and `pre_init_hook`
 keep the DB from getting stuck on subsequent install/uninstall cycles.
 
+## Dynamic model list (auto-sync)
+
+The Claude models offered in the agent's **LLM Model** dropdown are no
+longer a hardcoded list. They live in the `daadit.ai.claude.model`
+registry, which is refreshed from the Anthropic `GET /v1/models` API:
+
+* **Daily** — a scheduled action (`ir.cron`) syncs the list, so a newly
+  released Claude model appears on its own without a redeploy.
+* **On demand** — *Settings → AI → Refresh Claude model list*, or the
+  *Refresh from Anthropic* button under **AI → Configuration → Claude
+  Models**.
+
+A built-in seed keeps the dropdown usable before the first sync (fresh
+install, no key yet, or API unreachable). Untick a row's *Active* flag
+to hide a model without breaking agents that still reference it. The
+sync only runs when the Anthropic key is enabled.
+
 ## Configuration reference
 
 All values stored in `ir.config_parameter`:

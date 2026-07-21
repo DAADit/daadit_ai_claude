@@ -240,6 +240,85 @@ class ClaudeClient:
 
         return resp.json()
 
+    # --- internal HTTP GET helper ---------------------------------------
+
+    def _get(self, path: str, params: Optional[Mapping[str, object]] = None) -> dict:
+        url = f"{self.base_url}{path}"
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": self.anthropic_version,
+            "Accept": "application/json",
+        }
+        try:
+            resp = requests.get(
+                url,
+                headers=headers,
+                params=dict(params or {}),
+                timeout=self.timeout,
+            )
+        except requests.RequestException as exc:
+            raise RuntimeError(f"Anthropic request failed: {exc}") from exc
+
+        if 400 <= resp.status_code < 500:
+            try:
+                err = resp.json() or {}
+            except ValueError:
+                err = {}
+            detail = (
+                _stringify_error(err.get("error"))
+                or _stringify_error(err.get("message"))
+                or resp.text[:500]
+            )
+            raise UserError(_(
+                "Anthropic API rejected the request (HTTP %(status)s): "
+                "%(detail)s",
+                status=resp.status_code,
+                detail=detail,
+            ))
+        if resp.status_code >= 500:
+            raise RuntimeError(
+                f"Anthropic API server error {resp.status_code}: "
+                f"{resp.text[:200]}"
+            )
+        return resp.json()
+
+    def list_models(self) -> list:
+        """Return available models from ``GET /v1/models``.
+
+        Anthropic paginates via ``has_more`` / ``last_id``. Each item is
+        ``{"id": "claude-...", "display_name": "Claude ...",
+        "type": "model", "created_at": "..."}``. We follow pages until
+        exhausted (with a hard safety cap) and return a flat list of
+        ``{"id", "display_name", "created_at"}`` dicts.
+        """
+        out = []
+        params = {"limit": 100}
+        seen = 0
+        while True:
+            data = self._get("/models", params=params) or {}
+            items = data.get("data") or []
+            for it in items:
+                if not isinstance(it, Mapping):
+                    continue
+                mid = (it.get("id") or "").strip()
+                if not mid:
+                    continue
+                out.append({
+                    "id": mid,
+                    "display_name": (it.get("display_name") or mid).strip(),
+                    "created_at": it.get("created_at") or "",
+                })
+            seen += len(items)
+            if not data.get("has_more") or not data.get("last_id"):
+                break
+            if seen > 1000:  # safety valve against a runaway pagination loop
+                _logger.warning(
+                    "daadit_ai_claude: list_models stopped at 1000 items"
+                )
+                break
+            params = {"limit": 100, "after_id": data["last_id"]}
+        return out
+
     # --- messages (chat) -------------------------------------------------
 
     def create_message(
