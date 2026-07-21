@@ -94,6 +94,17 @@ UPDATE ai_agent
 …then trigger a rebuild. The module's `uninstall_hook` and `pre_init_hook`
 keep the DB from getting stuck on subsequent install/uninstall cycles.
 
+## Web research (`_daadit_claude_research`)
+
+`ai.agent._daadit_claude_research(prompt, max_uses=5)` runs the agent as
+a one-shot Claude call with Anthropic's server-side **web_search** tool
+and returns the answer text (with source URLs when the prompt asks for
+them). This gives orchestrating agents real, up-to-date online research
+instead of model-memory guesses — e.g. a marketing manager agent calling
+a research agent ("find the current hot topics for a blog post on X").
+The called agent's `system_prompt` frames the role; `max_uses` caps how
+many searches Claude may run. Requires the Anthropic key to be enabled.
+
 ## Dynamic model list (auto-sync)
 
 The Claude models offered in the agent's **LLM Model** dropdown are no
