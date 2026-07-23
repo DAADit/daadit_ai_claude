@@ -24,6 +24,7 @@ Anthropic's tool envelope:
 """
 import json
 import logging
+import re
 import threading
 
 _logger = logging.getLogger(__name__)
@@ -49,6 +50,51 @@ def _tool_name_to_method(tool_name: str) -> str:
     if tool_name.startswith(_AI_TOOL_PREFIX):
         return tool_name
     return _AI_TOOL_PREFIX + tool_name
+
+
+# Stock ai_app names a tool after its action's xml-id suffix
+# (``ir_actions_server_search``) or ``action_<id>`` when the action has
+# no xml-id (custom tools created in the UI).
+_ACTION_ID_RE = re.compile(r"^action_(\d+)$")
+
+
+def _resolve_tool_action(agent, fn_name):
+    """Resolve a tool name to its backing ``ir.actions.server`` record.
+
+    Executing the ACTION (via stock's ``_ai_tool_run``) instead of the
+    underlying ``_ai_tool_*`` method matters twice over: custom tools
+    (``action_<id>``) have no backing method at all, and operators put
+    guard code in the action body that must run on every dispatch path.
+    Returns a record in the agent's (non-sudo) environment, or None.
+    """
+    env = getattr(agent, "env", None)
+    if env is None:
+        return None
+    try:
+        Action = env["ir.actions.server"].sudo()
+        action = None
+        m = _ACTION_ID_RE.match(fn_name or "")
+        if m:
+            candidate = Action.browse(int(m.group(1)))
+            if candidate.exists():
+                action = candidate
+        else:
+            imd = env["ir.model.data"].sudo().search(
+                [("model", "=", "ir.actions.server"), ("name", "=", fn_name)],
+                limit=1,
+            )
+            if imd:
+                candidate = Action.browse(imd.res_id)
+                if candidate.exists():
+                    action = candidate
+        if action is not None and action.use_in_ai:
+            return action.with_env(env)
+    except Exception:  # noqa: BLE001
+        _logger.exception(
+            "daadit_ai_claude.tool_dispatch: action resolution raised "
+            "for %r — falling back to method dispatch", fn_name,
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -369,6 +415,22 @@ def normalize_tools(tools):
                     converted.append({"name": name, **val})
                 elif isinstance(val, str):
                     converted.append({"name": name, "description": val})
+                elif isinstance(val, (list, tuple)):
+                    # Stock ai_app's ``_get_ai_tools()`` format:
+                    # {name: (description, allow_end_message, callable,
+                    #         json_schema)}. Dropping the schema here is
+                    # what made Claude see parameterless tools — keep it.
+                    entry = {"name": name}
+                    if val and isinstance(val[0], str):
+                        entry["description"] = val[0]
+                    schema = next(
+                        (v for v in val
+                         if isinstance(v, dict) and "properties" in v),
+                        None,
+                    )
+                    if schema is not None:
+                        entry["input_schema"] = schema
+                    converted.append(entry)
                 else:
                     converted.append({"name": name})
             tools = converted
@@ -617,12 +679,14 @@ def run_tool_call(agent, tool_use):
             f"Pass arguments as a JSON object whose values are typed."
         )}
 
+    action = _resolve_tool_action(agent, fn_name)
     method_name = _tool_name_to_method(fn_name)
     method = getattr(agent, method_name, None)
-    if not callable(method):
+    if action is None and not callable(method):
         _logger.warning(
             "daadit_ai_claude.tool_dispatch: unknown tool %r → %s "
-            "(method not on ai.agent)", fn_name, method_name,
+            "(method not on ai.agent, no matching server action)",
+            fn_name, method_name,
         )
         if env is not None:
             _record_in_ir_logging(
@@ -746,7 +810,13 @@ def run_tool_call(agent, tool_use):
                     )}
 
     try:
-        result = method(**kwargs)
+        if action is not None:
+            # Preferred path: stock's executor validates the action's
+            # ai_tool_schema and runs the action BODY — including any
+            # operator guard code — exactly like the native AI flow.
+            result = action._ai_tool_run(agent, kwargs)
+        else:
+            result = method(**kwargs)
     except TypeError as exc:
         sig_hint = _build_signature_hint(method, fn_name)
         _logger.warning(
