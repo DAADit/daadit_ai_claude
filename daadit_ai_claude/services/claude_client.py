@@ -23,6 +23,7 @@ Docs: https://docs.anthropic.com/en/api/messages
 """
 import json
 import logging
+import re
 from typing import List, Mapping, Optional, Sequence
 
 import requests
@@ -76,6 +77,19 @@ def is_claude_model(model_id: str) -> bool:
     if not model_id:
         return False
     return model_id in SUPPORTED_MODELS or model_id.startswith("claude-")
+
+
+# The Claude 5 family (claude-sonnet-5, claude-fable-5, and any future
+# claude-<name>-5[-suffix]) rejects the ``temperature`` parameter with
+# HTTP 400 "`temperature` is deprecated for this model". Matching those
+# models here lets us drop the parameter proactively; unknown future
+# models are additionally covered by the reactive retry in
+# ``create_message``.
+_TEMPERATURE_UNSUPPORTED_RE = re.compile(r"^claude-[a-z]+-([5-9]|\d{2,})($|-)")
+
+
+def model_supports_temperature(model_id: str) -> bool:
+    return not _TEMPERATURE_UNSUPPORTED_RE.match(model_id or "")
 
 
 def _stringify_error(value) -> str:
@@ -364,10 +378,16 @@ class ClaudeClient:
         if system:
             payload["system"] = str(system)
         if temperature is not None:
-            try:
-                payload["temperature"] = float(temperature)
-            except (TypeError, ValueError):
-                pass
+            if model_supports_temperature(model):
+                try:
+                    payload["temperature"] = float(temperature)
+                except (TypeError, ValueError):
+                    pass
+            else:
+                _logger.debug(
+                    "Anthropic messages: dropped temperature=%r — model %s "
+                    "does not accept it", temperature, model,
+                )
         if tools:
             payload["tools"] = list(tools)
         if tool_choice is not None:
@@ -386,7 +406,20 @@ class ClaudeClient:
             "Anthropic → model=%s msgs=%d tools=%d max_tokens=%d",
             model, len(messages), len(tools or []), mt,
         )
-        return self._post("/messages", payload)
+        try:
+            return self._post("/messages", payload)
+        except UserError as exc:
+            # Reactive fallback for models we didn't anticipate: if the
+            # API rejects the temperature parameter, retry once without.
+            msg = str(exc)
+            if "temperature" in payload and "temperature" in msg.lower():
+                _logger.warning(
+                    "Anthropic rejected temperature for model %s — "
+                    "retrying without it", model,
+                )
+                payload.pop("temperature", None)
+                return self._post("/messages", payload)
+            raise
 
     # --- convenience extractors -----------------------------------------
 
