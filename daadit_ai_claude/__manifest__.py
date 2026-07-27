@@ -25,7 +25,13 @@ Features
   ``ai.embedding.embedding_model``. RAG/Sources can keep running on the
   embedding providers Odoo already supports.
 * **Per-agent access control** — allowed-models / blocked-models /
-  field blocklist.
+  field blocklist, plus the hard per-agent *read scope* (record-level
+  domains AND-ed into every search) when ``daadit_ai_mistral`` is
+  installed alongside — the same gate now covers both providers.
+* **Daily cost cap** — a hard USD budget per day
+  (``daadit_ai_claude.daily_cost_cap_usd``, plus an optional shared
+  ceiling over Claude *and* Mistral spend); once reached, calls are
+  refused in the chat language and an admin is mailed once per day.
 * **Usage tracking** — every chat call writes a row to
   ``daadit_ai_claude.usage`` with token counts and an estimated cost
   (USD per 1M tokens, overridable via ICP).
@@ -42,7 +48,7 @@ user/assistant turns, and tool calls travel as ``content`` blocks of
 out of that envelope so the rest of Odoo's AI plumbing (topics, tool
 actions, language mirroring) keeps working unchanged.
 """,
-    "version": "19.0.3.3.0",
+    "version": "19.0.4.0.0",
     "category": "Productivity/Discuss",
     "author": "DAADit",
     "website": "https://daadit.group",
@@ -59,6 +65,7 @@ actions, language mirroring) keeps working unchanged.
         "security/ir.model.access.csv",
         "security/claude_usage_security.xml",
         "data/claude_models_seed.xml",
+        "data/cost_cap_params.xml",
         "data/ir_cron.xml",
         "views/res_config_settings_views.xml",
         "views/claude_usage_views.xml",

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Daily cost-cap defaults (v19.0.4.0.0).
+
+    noupdate="1": these are seed values. Once set, admins tune them in
+    Settings -> Technical -> System Parameters without a module upgrade
+    reverting the change.
+
+    - daadit_ai_claude.daily_cost_cap_usd = 5 -> hard daily budget in
+      USD for Claude calls (Anthropic bills in USD). 0 disables it.
+    - daadit_ai.daily_cost_cap_usd -> optional ceiling over Claude AND
+      Mistral spend combined; seeded empty (disabled) so an existing
+      per-provider setup keeps behaving as before.
+    - daadit_ai_claude.cost_cap_notify_email -> left empty here; set to
+      the admin's address so the "budget reached" mail has a recipient.
+      Empty falls back to the admin user / company e-mail.
+-->
+<odoo>
+    <data noupdate="1">
+        <record id="cost_cap_daily_usd" model="ir.config_parameter">
+            <field name="key">daadit_ai_claude.daily_cost_cap_usd</field>
+            <field name="value">5</field>
+        </record>
+        <record id="cost_cap_shared_daily_usd" model="ir.config_parameter">
+            <field name="key">daadit_ai.daily_cost_cap_usd</field>
+            <field name="value">0</field>
+        </record>
+        <record id="cost_cap_notify_email" model="ir.config_parameter">
+            <field name="key">daadit_ai_claude.cost_cap_notify_email</field>
+            <field name="value"></field>
+        </record>
+    </data>
+</odoo>
