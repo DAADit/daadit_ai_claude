@@ -326,22 +326,37 @@ def _format_access_denied_message(info):
     return "\n".join(lines)
 
 
+MIN_LANG_REF_LETTERS = 12
+
+
+def _letter_count(text):
+    """Number of alphabetic characters in ``text`` (any script)."""
+    return sum(1 for ch in text if ch.isalpha())
+
+
 def _translate_to_chat_language(client, model, ref_messages, text):
     """Use Claude itself to translate ``text`` into the language of the
-    conversation (so admin-policy denials match the user's locale)."""
+    conversation (so admin-policy denials match the user's locale).
+
+    The reference is the last few *substantial* user turns. A single
+    short turn (``"?"``, ``"ok"``, an agent's name) carries no language
+    signal and made denials come back in a random language, so turns
+    below ``MIN_LANG_REF_LETTERS`` letters are ignored.
+    """
     if not text or not ref_messages:
         return text
 
-    user_msgs = [
-        m for m in ref_messages
+    user_texts = [
+        m["content"] for m in ref_messages
         if isinstance(m, dict)
         and m.get("role") == "user"
         and isinstance(m.get("content"), str)
         and m.get("content").strip()
     ]
-    if not user_msgs:
+    usable = [t for t in user_texts if _letter_count(t) >= MIN_LANG_REF_LETTERS]
+    if not usable:
         return text
-    last_user = user_msgs[-1]["content"]
+    last_user = "\n\n".join(usable[-3:])[-800:]
 
     try:
         response = client.create_message(
@@ -550,6 +565,31 @@ def _request_llm_claude(api_self, *args, **kwargs):
     response = None
     access_denial = None
     total_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+
+    # --- Daily cost cap (v19.0.4.0.0) --------------------------------
+    # Single choke point for every Claude chat call, mirroring the
+    # Mistral provider. When today's spend has reached the configured
+    # cap, refuse the call with a clear, translated message instead of
+    # hitting Anthropic — and notify the admin once per day.
+    # Fail-open: a broken breaker never blocks chat.
+    try:
+        from . import cost_cap
+        blocked, spent, cap = cost_cap.check(api_self.env)
+        if blocked:
+            _logger.warning(
+                "daadit_ai_claude.llm_api_patch: daily cost cap reached "
+                "(%.2f/%.2f) — refusing call for agent=%s",
+                spent, cap, agent.id if agent else None,
+            )
+            return [_translate_to_chat_language(
+                client, model, conversation,
+                cost_cap.blocked_message_en(spent, cap),
+            )]
+    except Exception:  # noqa: BLE001
+        _logger.exception(
+            "daadit_ai_claude.llm_api_patch: cost-cap gate raised; "
+            "failing open"
+        )
 
     while iteration < MAX_ITER:
         response = client.create_message(
