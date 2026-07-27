@@ -432,6 +432,42 @@ def _resolve_agent(api_self):
     return None
 
 
+_DEFAULT_MAX_TOOL_RESULT_CHARS = 6000
+
+
+def _cap_tool_result(env, content):
+    """Bound the size of one tool result before it enters the context.
+
+    A tool result stays in the conversation for every following
+    round-trip, so an unbounded ``search`` of 80 full records is paid
+    for again on each iteration. Truncate with an instruction the model
+    can act on instead of silently feeding it half a record.
+
+    Tunable via ``daadit_ai_claude.max_tool_result_chars``; 0 disables.
+    """
+    try:
+        raw = env["ir.config_parameter"].sudo().get_param(
+            "daadit_ai_claude.max_tool_result_chars",
+            _DEFAULT_MAX_TOOL_RESULT_CHARS,
+        )
+        limit = int(raw)
+    except Exception:  # noqa: BLE001
+        limit = _DEFAULT_MAX_TOOL_RESULT_CHARS
+    if limit <= 0 or not isinstance(content, str) or len(content) <= limit:
+        return content
+    _logger.info(
+        "daadit_ai_claude.llm_api_patch: tool result truncated "
+        "%d → %d chars", len(content), limit,
+    )
+    return (
+        content[:limit]
+        + "\n\n[TRUNCATED: this result was %d characters; only the "
+          "first %d are shown. Do not guess the rest — narrow the "
+          "domain, request fewer fields, or aggregate with read_group.]"
+          % (len(content), limit)
+    )
+
+
 _LANGUAGE_MIRROR_INSTRUCTION = (
     "IMPORTANT: Always respond in the same language as the user's most "
     "recent message. If the user writes in Dutch, reply in Dutch. If "
@@ -591,6 +627,36 @@ def _request_llm_claude(api_self, *args, **kwargs):
             "failing open"
         )
 
+    # --- Per-agent / per-tenant budget + fair use --------------------
+    # ``daadit.ai.budget`` lives in daadit_ai_mistral and counts spend
+    # across BOTH providers, so an agent can't escape its ceiling by
+    # switching model. Soft dependency: no budget model, no gate.
+    fair_use_notice = ""
+    try:
+        if "daadit.ai.budget" in api_self.env:
+            blocked, budget_msg, detail = api_self.env[
+                "daadit.ai.budget"].sudo().evaluate(agent=agent)
+            if blocked:
+                _logger.warning(
+                    "daadit_ai_claude.llm_api_patch: budget exhausted "
+                    "(%s) — refusing call for agent=%s",
+                    detail, agent.id if agent else None,
+                )
+                return [_translate_to_chat_language(
+                    client, model, conversation, budget_msg,
+                )]
+            if budget_msg:
+                _logger.info(
+                    "daadit_ai_claude.llm_api_patch: fair-use notice "
+                    "(%s)", detail,
+                )
+                fair_use_notice = budget_msg
+    except Exception:  # noqa: BLE001
+        _logger.exception(
+            "daadit_ai_claude.llm_api_patch: budget gate raised; "
+            "failing open"
+        )
+
     while iteration < MAX_ITER:
         response = client.create_message(
             model=model,
@@ -633,6 +699,7 @@ def _request_llm_claude(api_self, *args, **kwargs):
                 content_str = json.dumps(result, default=str)
             except Exception:  # noqa: BLE001
                 content_str = str(result)
+            content_str = _cap_tool_result(api_self.env, content_str)
             tool_result_blocks.append({
                 "type": "tool_result",
                 "tool_use_id": tu.get("id"),
@@ -756,6 +823,11 @@ def _request_llm_claude(api_self, *args, **kwargs):
                 client, model, conversation, fallback_en,
             )
         ]
+
+    if fair_use_notice and adapted:
+        adapted.append(_translate_to_chat_language(
+            client, model, conversation, fair_use_notice,
+        ))
     return adapted
 
 
