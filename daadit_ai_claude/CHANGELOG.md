@@ -19,6 +19,16 @@ Claude.
   and `ir_actions_server_read_group`, fail-closed when the scope cannot
   be applied. The scope model lives in `daadit_ai_mistral`, so this is
   a soft dependency: no scope model installed, no gate, no error.
+- **Per-agent / per-tenant budgets with fair use.** When
+  `daadit.ai.budget` is installed (it lives in `daadit_ai_mistral`, so
+  this is a soft dependency), Claude calls are evaluated against the
+  same daily/monthly ceilings as Mistral calls: fair-use notice from
+  the warning threshold, hard stop at 100%. Budgets count spend across
+  both providers, so switching model cannot dodge the ceiling.
+- **Tool results are bounded** before they enter the conversation
+  (`daadit_ai_claude.max_tool_result_chars`, default 6000, 0 disables).
+  Each tool result is re-sent on every following round-trip, so an
+  unbounded search was paid for again each iteration.
 - **Denial messages follow the conversation language again.**
   `_translate_to_chat_language` joins the last three user turns of at
   least `MIN_LANG_REF_LETTERS` letters instead of trusting a single
