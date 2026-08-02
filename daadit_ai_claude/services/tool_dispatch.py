@@ -34,6 +34,18 @@ _logger = logging.getLogger(__name__)
 # leftover state doesn't leak across requests on the same worker.
 current_agent = threading.local()
 
+# Signaalkanaal naar wie een hele run bezit (``daadit_ai_agent_schedule``).
+# Zonder dit is een half rapport niet te onderscheiden van een compleet
+# rapport: run 481 kreeg status 'done' terwijl de tekst midden in een zin
+# ophield bij de iteratielimiet. De Mistral-kant heeft dit al; de
+# scheduler leest exact deze attributen, dus de namen liggen vast.
+#
+#   run_deadline_monotonic  door de caller gezet vóór de beurt, en in
+#                           zijn finally weer op None
+#   top_level_exhausted     door de provider gezet als hij afbrak
+#   exhaustion_reason       'max_iter' of 'deadline'
+router_state = threading.local()
+
 
 # ---------------------------------------------------------------------------
 # Tool name → ai.agent method mapping
