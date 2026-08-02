@@ -54,10 +54,8 @@
         </field>
     </record>
 
-    <menuitem id="menu_claude_model"
-              name="Claude Models"
-              parent="ai_app.ai_config_menu"
-              action="action_claude_model"
-              sequence="90"
-              groups="base.group_system"/>
+    <!-- Het losse Models-menu is vervallen (2026-07-29): het register
+         wordt beheerd via AI . Configuration . Router: Providers &
+         modellen, dat live met dit register meeloopt. De action blijft
+         bestaan voor de "Refresh models"-knop in Settings. -->
 </odoo>
