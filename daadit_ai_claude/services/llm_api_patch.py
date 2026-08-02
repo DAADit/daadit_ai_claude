@@ -327,22 +327,37 @@ def _format_access_denied_message(info):
     return "\n".join(lines)
 
 
+MIN_LANG_REF_LETTERS = 12
+
+
+def _letter_count(text):
+    """Number of alphabetic characters in ``text`` (any script)."""
+    return sum(1 for ch in text if ch.isalpha())
+
+
 def _translate_to_chat_language(client, model, ref_messages, text):
     """Use Claude itself to translate ``text`` into the language of the
-    conversation (so admin-policy denials match the user's locale)."""
+    conversation (so admin-policy denials match the user's locale).
+
+    The reference is the last few *substantial* user turns. A single
+    short turn (``"?"``, ``"ok"``, an agent's name) carries no language
+    signal and made denials come back in a random language, so turns
+    below ``MIN_LANG_REF_LETTERS`` letters are ignored.
+    """
     if not text or not ref_messages:
         return text
 
-    user_msgs = [
-        m for m in ref_messages
+    user_texts = [
+        m["content"] for m in ref_messages
         if isinstance(m, dict)
         and m.get("role") == "user"
         and isinstance(m.get("content"), str)
         and m.get("content").strip()
     ]
-    if not user_msgs:
+    usable = [t for t in user_texts if _letter_count(t) >= MIN_LANG_REF_LETTERS]
+    if not usable:
         return text
-    last_user = user_msgs[-1]["content"]
+    last_user = "\n\n".join(usable[-3:])[-800:]
 
     try:
         response = client.create_message(
@@ -457,12 +472,73 @@ def _resolve_agent(api_self):
     return None
 
 
+_DEFAULT_MAX_TOOL_RESULT_CHARS = 6000
+
+
+def _cap_tool_result(env, content):
+    """Bound the size of one tool result before it enters the context.
+
+    A tool result stays in the conversation for every following
+    round-trip, so an unbounded ``search`` of 80 full records is paid
+    for again on each iteration. Truncate with an instruction the model
+    can act on instead of silently feeding it half a record.
+
+    Tunable via ``daadit_ai_claude.max_tool_result_chars``; 0 disables.
+    """
+    try:
+        raw = env["ir.config_parameter"].sudo().get_param(
+            "daadit_ai_claude.max_tool_result_chars",
+            _DEFAULT_MAX_TOOL_RESULT_CHARS,
+        )
+        limit = int(raw)
+    except Exception:  # noqa: BLE001
+        limit = _DEFAULT_MAX_TOOL_RESULT_CHARS
+    if limit <= 0 or not isinstance(content, str) or len(content) <= limit:
+        return content
+    _logger.info(
+        "daadit_ai_claude.llm_api_patch: tool result truncated "
+        "%d → %d chars", len(content), limit,
+    )
+    return (
+        content[:limit]
+        + "\n\n[TRUNCATED: this result was %d characters; only the "
+          "first %d are shown. Do not guess the rest — narrow the "
+          "domain, request fewer fields, or aggregate with read_group.]"
+          % (len(content), limit)
+    )
+
+
+# Why this exists: prod chats keep ending in a question the agent could
+# have answered itself. Observed 2026-07-27: the blog tool RETURNED the
+# list of two blogs, and the agent relayed "which blog should I use?" to
+# the user instead of picking one. Every such turn costs a full extra
+# round-trip and makes the colleague feel useless.
+_SELF_SERVICE_INSTRUCTION = (
+    "CRITICAL — DECIDE, DON'T ASK: You have tools that read this Odoo "
+    "database. Never ask the user for anything you can look up, and "
+    "never hand back a choice you can make yourself. Before you ask a "
+    "question: (1) search Odoo for the answer; (2) if a tool result "
+    "already lists the options, pick the one that best fits the task; "
+    "(3) if the options are genuinely equivalent, take the most "
+    "obvious one, act, and state which one you took and how to change "
+    "it. Asking 'which blog should I use?' right after a tool handed "
+    "you the list of blogs is a failure, not caution. Only ask the "
+    "user when the answer cannot exist in Odoo, or when the action is "
+    "irreversible or costly (publishing, sending email, deleting, "
+    "spending money) — and then ask once, with your recommendation "
+    "already in the question. If the work belongs to another "
+    "colleague and you have a tool to reach them, use it; do not tell "
+    "the user to go ask that colleague."
+)
+
+
 _LANGUAGE_MIRROR_INSTRUCTION = (
     "IMPORTANT: Always respond in the same language as the user's most "
     "recent message. If the user writes in Dutch, reply in Dutch. If "
     "the user writes in French, reply in French. Do NOT translate "
     "technical identifiers inside backticks (such as `account.move`, "
-    "`res.partner`, field names like `stage_id`)."
+    "`res.partner`, field names like `stage_id`).\n\n"
+    + _SELF_SERVICE_INSTRUCTION
 )
 
 
@@ -591,6 +667,61 @@ def _request_llm_claude(api_self, *args, **kwargs):
     access_denial = None
     total_usage = {"prompt_tokens": 0, "completion_tokens": 0}
 
+    # --- Daily cost cap (v19.0.4.0.0) --------------------------------
+    # Single choke point for every Claude chat call, mirroring the
+    # Mistral provider. When today's spend has reached the configured
+    # cap, refuse the call with a clear, translated message instead of
+    # hitting Anthropic — and notify the admin once per day.
+    # Fail-open: a broken breaker never blocks chat.
+    try:
+        from . import cost_cap
+        blocked, spent, cap = cost_cap.check(api_self.env)
+        if blocked:
+            _logger.warning(
+                "daadit_ai_claude.llm_api_patch: daily cost cap reached "
+                "(%.2f/%.2f) — refusing call for agent=%s",
+                spent, cap, agent.id if agent else None,
+            )
+            return [_translate_to_chat_language(
+                client, model, conversation,
+                cost_cap.blocked_message_en(spent, cap),
+            )]
+    except Exception:  # noqa: BLE001
+        _logger.exception(
+            "daadit_ai_claude.llm_api_patch: cost-cap gate raised; "
+            "failing open"
+        )
+
+    # --- Per-agent / per-tenant budget + fair use --------------------
+    # ``daadit.ai.budget`` lives in daadit_ai_mistral and counts spend
+    # across BOTH providers, so an agent can't escape its ceiling by
+    # switching model. Soft dependency: no budget model, no gate.
+    fair_use_notice = ""
+    try:
+        if "daadit.ai.budget" in api_self.env:
+            blocked, budget_msg, detail = api_self.env[
+                "daadit.ai.budget"].sudo().evaluate(agent=agent)
+            if blocked:
+                _logger.warning(
+                    "daadit_ai_claude.llm_api_patch: budget exhausted "
+                    "(%s) — refusing call for agent=%s",
+                    detail, agent.id if agent else None,
+                )
+                return [_translate_to_chat_language(
+                    client, model, conversation, budget_msg,
+                )]
+            if budget_msg:
+                _logger.info(
+                    "daadit_ai_claude.llm_api_patch: fair-use notice "
+                    "(%s)", detail,
+                )
+                fair_use_notice = budget_msg
+    except Exception:  # noqa: BLE001
+        _logger.exception(
+            "daadit_ai_claude.llm_api_patch: budget gate raised; "
+            "failing open"
+        )
+
     while iteration < MAX_ITER:
         response = client.create_message(
             model=model,
@@ -633,6 +764,7 @@ def _request_llm_claude(api_self, *args, **kwargs):
                 content_str = json.dumps(result, default=str)
             except Exception:  # noqa: BLE001
                 content_str = str(result)
+            content_str = _cap_tool_result(api_self.env, content_str)
             tool_result_blocks.append({
                 "type": "tool_result",
                 "tool_use_id": tu.get("id"),
@@ -799,6 +931,11 @@ def _request_llm_claude(api_self, *args, **kwargs):
                 client, model, conversation, fallback_en,
             )
         ]
+
+    if fair_use_notice and adapted:
+        adapted.append(_translate_to_chat_language(
+            client, model, conversation, fair_use_notice,
+        ))
     return adapted
 
 
