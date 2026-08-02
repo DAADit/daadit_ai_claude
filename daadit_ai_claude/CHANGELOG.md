@@ -1,5 +1,36 @@
 # Changelog — daadit_ai_claude
 
+## 19.0.4.3.0 — 2026-07-26
+
+Een half rapport heet niet langer 'klaar'.
+
+Run 481 (Bram op claude-sonnet-4-6) kreeg status `done` terwijl de
+tekst midden in een zin ophield: *"Ik zoek nu naar open tickets…"*. De
+agent was niet klaar, hij liep tegen `MAX_ITER = 6`. De Mistral-kant
+meldt zo'n afbreking al via `router_state`, en de scheduler leest
+precies die vlaggen om 'error' te geven in plaats van 'done'; Claude
+zweeg. Daardoor is een afgekapt rapport niet te onderscheiden van een
+compleet rapport — dezelfde misleiding die voor Mistral in 19.0.2.1.0
+is opgelost.
+
+Drie wijzigingen, allemaal spiegelend op de Mistral-kant:
+
+- `tool_dispatch.router_state` toegevoegd met `top_level_exhausted`,
+  `exhaustion_reason` en `run_deadline_monotonic`. De namen liggen vast:
+  `daadit_ai_agent_schedule.services.provider_bridge` leest ze letterlijk.
+- Bij afbreken wordt de vlag gezet met reden `max_iter` of `deadline`,
+  en aan het begin van elke beurt geschoond zodat een vorige beurt op
+  dezelfde worker deze niet besmet.
+- `MAX_ITER` komt uit `daadit_ai_claude.max_tool_iterations`
+  (standaard 12, begrensd op 1–40). Zes is te krap voor een
+  rapportagetaak: zoeken, verdiepen, samenvatten en wegschrijven zijn
+  er samen al meer.
+
+Claude kende bovendien geen tijdgrens. Nu wordt tussen de round-trips
+op `run_deadline_monotonic` gecontroleerd, dus een run overschrijdt
+hooguit één call plus zijn tools in plaats van de volle lus te blijven
+hangen.
+
 ## 19.0.4.2.0 — 2026-08-02
 
 Agents kept handing decisions back to the user. Prod, 2026-07-27:

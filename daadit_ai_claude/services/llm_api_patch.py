@@ -26,6 +26,7 @@ Key Anthropic-specific quirks handled in this module:
 import importlib
 import json
 import logging
+import time
 
 from .claude_client import ClaudeClient, is_claude_model
 from . import tool_dispatch
@@ -475,6 +476,56 @@ def _resolve_agent(api_self):
 _DEFAULT_MAX_TOOL_RESULT_CHARS = 6000
 
 
+_MAX_ITER_ICP = "daadit_ai_claude.max_tool_iterations"
+_MAX_ITER_DEFAULT = 12
+
+
+def _max_iterations(env):
+    """Hoeveel tool-rondes een beurt mag maken.
+
+    Was hardcoded op 6, wat voor een rapportagetaak te krap is: zoeken,
+    verdiepen, samenvatten en wegschrijven zijn er samen al meer, en de
+    zevende ronde werd afgekapt midden in een zin. Instelbaar via
+    ``daadit_ai_claude.max_tool_iterations``, begrensd zodat een
+    typefout de agent niet lamlegt of laat ontsporen.
+    """
+    try:
+        raw = env["ir.config_parameter"].sudo().get_param(_MAX_ITER_ICP)
+        return max(1, min(int(str(raw).strip()), 40))
+    except (TypeError, ValueError):
+        return _MAX_ITER_DEFAULT
+    except Exception:  # noqa: BLE001
+        _logger.exception(
+            "daadit_ai_claude.llm_api_patch: kon %s niet lezen; "
+            "terugval op %d", _MAX_ITER_ICP, _MAX_ITER_DEFAULT,
+        )
+        return _MAX_ITER_DEFAULT
+
+
+def _reset_exhaustion():
+    try:
+        tool_dispatch.router_state.top_level_exhausted = False
+        tool_dispatch.router_state.exhaustion_reason = None
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _flag_exhausted(reason):
+    """Meld dat deze beurt is afgebroken.
+
+    De scheduler leest dit om de run 'error' te geven in plaats van
+    'done'. Best-effort: het signaal mag het antwoord nooit kosten.
+    """
+    try:
+        tool_dispatch.router_state.top_level_exhausted = True
+        tool_dispatch.router_state.exhaustion_reason = reason
+    except Exception:  # noqa: BLE001
+        _logger.exception(
+            "daadit_ai_claude.llm_api_patch: kon uitputting niet "
+            "signaleren (%s)", reason,
+        )
+
+
 def _cap_tool_result(env, content):
     """Bound the size of one tool result before it enters the context.
 
@@ -662,7 +713,12 @@ def _request_llm_claude(api_self, *args, **kwargs):
 
     client = ClaudeClient.from_env(api_self.env)
     iteration = 0
-    MAX_ITER = 6
+    # Zes rondes is krap voor een rapportagetaak: zoeken, verdiepen,
+    # samenvatten en wegschrijven zijn er samen al meer. Instelbaar,
+    # zoals aan de Mistral-kant, zodat een te korte lus geen deploy
+    # vraagt.
+    MAX_ITER = _max_iterations(api_self.env)
+    deadline_break = False
     response = None
     access_denial = None
     total_usage = {"prompt_tokens": 0, "completion_tokens": 0}
@@ -722,7 +778,26 @@ def _request_llm_claude(api_self, *args, **kwargs):
             "failing open"
         )
 
+    # Vlaggen schoon aan het begin van de beurt: een vorige beurt op
+    # dezelfde worker mag deze niet als afgebroken bestempelen.
+    _reset_exhaustion()
+
     while iteration < MAX_ITER:
+        # Harde tijdgrens voor wie een hele run bezit. Tussen de
+        # round-trips gecontroleerd, dus een run kan hooguit één call
+        # plus zijn tools overschrijden — niet de volle MAX_ITER blijven
+        # hangen.
+        _deadline = getattr(
+            tool_dispatch.router_state, "run_deadline_monotonic", None,
+        )
+        if _deadline is not None and time.monotonic() >= _deadline:
+            deadline_break = True
+            _logger.warning(
+                "daadit_ai_claude.llm_api_patch: run deadline bereikt na "
+                "%d iteratie(s) — tool-lus afgebroken", iteration,
+            )
+            break
+
         response = client.create_message(
             model=model,
             messages=conversation,
@@ -787,11 +862,15 @@ def _request_llm_claude(api_self, *args, **kwargs):
             iteration, len(tool_uses),
         )
 
-    if iteration >= MAX_ITER:
+    if deadline_break or iteration >= MAX_ITER:
+        # Melden dát er is afgebroken. De scheduler leest deze vlag om
+        # de run 'error' te geven in plaats van 'done'; zonder dat leest
+        # een halve zin als een afgerond rapport.
+        _flag_exhausted("deadline" if deadline_break else "max_iter")
         _logger.warning(
-            "daadit_ai_claude.llm_api_patch: hit MAX_ITER=%d in tool "
-            "loop; returning whatever final response we have",
-            MAX_ITER,
+            "daadit_ai_claude.llm_api_patch: tool-lus afgebroken (%s, "
+            "MAX_ITER=%d) — het antwoord is mogelijk onvolledig",
+            "deadline" if deadline_break else "max_iter", MAX_ITER,
         )
 
     # Admin-policy denial short-circuit — automatically route once through
