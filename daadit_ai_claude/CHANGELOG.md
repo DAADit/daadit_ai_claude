@@ -1,5 +1,15 @@
 # Changelog — daadit_ai_claude
 
+## 19.0.4.2.0 — 2026-08-02
+
+Agents kept handing decisions back to the user. Prod, 2026-07-27:
+`create_draft_blogpost` returned the list of the two blogs and the
+agent relayed *"in welke blog moet het concept?"* instead of picking
+`Nieuws`. `_SELF_SERVICE_INSTRUCTION` is now appended to every system
+prompt, matching `daadit_ai_mistral` 19.0.7.4.0: look it up, decide,
+state your choice, and ask only when the answer cannot exist in Odoo or
+the action is irreversible or costly.
+
 ## 19.0.4.0.0 — 2026-07-27
 
 Governance parity with `daadit_ai_mistral`. Until now the two hard
