@@ -23,6 +23,7 @@ Key Anthropic-specific quirks handled in this module:
 * **``max_tokens`` is required** — every call must specify it. The
   ``ClaudeClient`` falls back to a 4096 default when none is provided.
 """
+import importlib
 import json
 import logging
 
@@ -379,6 +380,45 @@ def _translate_to_chat_language(client, model, ref_messages, text):
         return text
 
 
+def _last_user_message_text(messages):
+    """Return the last user message as plain text, best effort."""
+    for message in reversed(messages or []):
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+        if isinstance(content, (list, tuple)):
+            parts = []
+            for part in content:
+                if isinstance(part, str):
+                    parts.append(part)
+                elif isinstance(part, dict):
+                    text = part.get("text") or part.get("content")
+                    if isinstance(text, str):
+                        parts.append(text)
+            value = "\n".join(parts).strip()
+            if value:
+                return value
+    return ""
+
+
+def _mistral_router_depth():
+    """Read Mistral's router depth when the optional module is installed."""
+    for module_name in (
+        "odoo.addons.daadit_ai_mistral.services.tool_dispatch",
+        "daadit_ai_mistral.services.tool_dispatch",
+    ):
+        try:
+            dispatch = importlib.import_module(module_name)
+            return getattr(dispatch.router_state, "depth", 0)
+        except (ImportError, AttributeError):
+            continue
+        except Exception:  # noqa: BLE001
+            return 1
+    return 0
+
+
 def _resolve_agent(api_self):
     """Find the ``ai.agent`` record that triggered this chat call.
 
@@ -622,19 +662,59 @@ def _request_llm_claude(api_self, *args, **kwargs):
             MAX_ITER,
         )
 
-    # Admin-policy denial short-circuit — surface a clean user-facing
-    # message in the chat language instead of letting the LLM
-    # mis-paraphrase the denial.
+    # Admin-policy denial short-circuit — automatically route once through
+    # the shared Mistral delegation tool when that optional module is
+    # installed and the current run is not already a routed sub-run.
     if access_denial:
-        en_message = _format_access_denied_message(access_denial)
+        model_name = access_denial.get("model_name")
+        routed = False
+        en_message = ""
+        if (
+            agent
+            and model_name
+            and _mistral_router_depth() == 0
+            and hasattr(agent, "_daadit_find_delegate_for_model")
+            and hasattr(agent, "_ai_tool_ask_agent")
+        ):
+            try:
+                delegate = agent._daadit_find_delegate_for_model(model_name)
+            except Exception:  # noqa: BLE001
+                delegate = False
+            user_question = _last_user_message_text(conversation)
+            if delegate and user_question:
+                try:
+                    routed_result = agent._ai_tool_ask_agent(
+                        agent_name=delegate.name,
+                        question=user_question,
+                    )
+                except Exception:  # noqa: BLE001
+                    routed_result = {"error": "Automatic routing failed."}
+                if (
+                    isinstance(routed_result, dict)
+                    and not routed_result.get("error")
+                    and routed_result.get("answer")
+                ):
+                    en_message = (
+                        f"{str(routed_result['answer']).strip()}\n\n"
+                        f"_Automatically forwarded to {delegate.name}, "
+                        f"who has access to `{model_name}`._"
+                    )
+                    routed = True
+
+        if not routed:
+            en_message = _format_access_denied_message(access_denial)
+            en_message += (
+                "\n\nNo other AI agent has access to this model either — "
+                "please hand this to a human colleague."
+            )
         translated = _translate_to_chat_language(
             client, model, conversation, en_message,
         )
         adapted = [translated]
         _logger.info(
-            "daadit_ai_claude.llm_api_patch: chat short-circuited "
-            "by admin-policy denial — model=%s requested=%s",
-            model, access_denial.get("model_name"),
+            "daadit_ai_claude.llm_api_patch: chat ended after "
+            "admin-policy denial (routed=%s) — model=%s requested=%s",
+            routed, model, model_name,
         )
         try:
             ch = api_self.env.context.get("discuss_channel")
@@ -649,7 +729,10 @@ def _request_llm_claude(api_self, *args, **kwargs):
                 completion_tokens=total_usage["completion_tokens"],
                 iterations=iteration + 1,
                 has_tools=bool(normalized_tools),
-                error=f"Access denied: {access_denial.get('model_name')}",
+                error=(
+                    None if routed
+                    else f"Access denied: {access_denial.get('model_name')}"
+                ),
             )
         except Exception:  # noqa: BLE001
             _logger.exception(

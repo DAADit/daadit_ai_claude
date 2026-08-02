@@ -42,7 +42,7 @@ user/assistant turns, and tool calls travel as ``content`` blocks of
 out of that envelope so the rest of Odoo's AI plumbing (topics, tool
 actions, language mirroring) keeps working unchanged.
 """,
-    "version": "19.0.3.3.0",
+    "version": "19.0.4.0.0",
     "category": "Productivity/Discuss",
     "author": "DAADit",
     "website": "https://daadit.group",
