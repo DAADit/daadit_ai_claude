@@ -42,6 +42,23 @@ current_agent = threading.local()
 _TOOL_PREFIX = "ir_actions_server_"
 _AI_TOOL_PREFIX = "_ai_tool_"
 
+# Tools whose ``domain`` argument the hard read scope is AND-ed into.
+_DOMAIN_TOOLS = (
+    "ir_actions_server_search",
+    "ir_actions_server_read_group",
+)
+
+
+def _domain_and(domains):
+    """AND a list of Odoo domains into one, skipping empty ones."""
+    parts = [d for d in domains if d]
+    if not parts:
+        return []
+    combined = parts[0]
+    for extra in parts[1:]:
+        combined = ["&"] + list(combined) + list(extra)
+    return combined
+
 
 def _tool_name_to_method(tool_name: str) -> str:
     """Map ``ir_actions_server_search`` ⇒ ``_ai_tool_search``."""
@@ -755,6 +772,53 @@ def run_tool_call(agent, tool_use):
                     f"model '{requested_model}'.{hint}"
                 ),
             }
+
+    # ----- Hard per-agent read scope ----------------------------------
+    # Parity with the Mistral provider: a ``daadit.ai.agent.read.scope``
+    # line pins the records this agent may see on one model, AND-ed in
+    # below the prompt layer. The model lives in daadit_ai_mistral, so
+    # this is a soft dependency — no scope model installed, no gate.
+    # Fail-closed: a scope line that cannot be applied blocks the read
+    # rather than silently widening it.
+    if (fn_name in _DOMAIN_TOOLS and requested_model
+            and hasattr(agent, "_daadit_read_scope_domain")):
+        try:
+            scope = agent._daadit_read_scope_domain(requested_model)
+        except Exception as exc:  # noqa: BLE001
+            _logger.exception(
+                "daadit_ai_claude.tool_dispatch: read-scope lookup "
+                "failed for agent=%s model=%s \u2014 failing closed",
+                agent.id, requested_model,
+            )
+            if env is not None:
+                _record_in_ir_logging(
+                    env, "WARNING", "daadit_ai_claude.tool_dispatch",
+                    f"READ_SCOPE_ERROR fn={fn_name} "
+                    f"model={requested_model} agent={agent.id} err={exc}",
+                )
+            return {"error": (
+                f"This agent's read scope for '{requested_model}' could "
+                f"not be applied ({exc}). The read was blocked; ask an "
+                f"administrator to fix the agent's read-scope "
+                f"configuration."
+            )}
+        if scope:
+            raw_domain = kwargs.get("domain")
+            try:
+                parsed = json.loads(raw_domain) if isinstance(
+                    raw_domain, str) and raw_domain.strip() else raw_domain
+            except (TypeError, ValueError):
+                parsed = None
+            if not isinstance(parsed, list):
+                parsed = []
+            kwargs["domain"] = json.dumps(
+                _domain_and([scope, parsed]), default=str,
+            )
+            _logger.info(
+                "daadit_ai_claude.tool_dispatch: read scope enforced "
+                "for agent=%s on %s (scope=%s)",
+                agent.id, requested_model, scope,
+            )
 
     # ----- Field-level privacy gate (request side) --------------------
     _model_for_priv = kwargs.get("model_name") or kwargs.get("model") or ""
