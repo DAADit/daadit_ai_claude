@@ -1,5 +1,16 @@
 # Changelog — daadit_ai_claude
 
+## 19.0.4.4.0 — 2026-08-03
+
+Zichtbare denkstappen in de chat, gelijk aan `daadit_ai_mistral`
+19.0.6.17.0. Claude stuurt nu tijdens een antwoord korte, PII-vrije
+voortgangsregels over de bus (per round-trip, per tool-aanroep, en een
+`done`-markering aan het eind). Het Anthropic `tool_use`-formaat wordt
+naar de gedeelde labelfunctie vertaald met alléén de toolnaam — nooit de
+`input` (argumenten). De labels en het bus-verkeer komen uit de gedeelde
+laag `daadit_ai_agent_schedule.services.agent_steps`. Claude kent geen
+routing/sub-runs, dus alle stappen staan op `depth = 0`.
+
 ## 19.0.4.3.0 — 2026-07-26
 
 Een half rapport heet niet langer 'klaar'.

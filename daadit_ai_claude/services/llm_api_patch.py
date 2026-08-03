@@ -95,9 +95,16 @@ def patch_llm_api_service() -> bool:
                     "cannot delegate non-Claude call."
                 )
             return original_request_llm(api_self, *args, **kwargs)
+        _agent = getattr(tool_dispatch.current_agent, "record", None)
         try:
             return _request_llm_claude(api_self, *args, **kwargs)
         finally:
+            # Sluit de denkstappen-lijst af zodat de frontend de
+            # "bezig"-status stopt.
+            try:
+                _notify_step(_agent, "Klaar", kind="done", done=True)
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 tool_dispatch.current_agent.record = None
             except Exception:  # noqa: BLE001
@@ -214,7 +221,10 @@ def _coerce_messages_for_anthropic(messages):
                 "content": [{
                     "type": "tool_result",
                     "tool_use_id": tool_use_id,
-                    "content": content if isinstance(content, str) else json.dumps(content, default=str),
+                    "content": (
+                        content if isinstance(content, str)
+                        else json.dumps(content, default=str)
+                    ),
                 }],
             })
             continue
@@ -260,30 +270,36 @@ def _normalize_messages(value):
 
 
 def _extract_from_dict(d, model, messages, tools, tool_choice,
-                        temperature, max_tokens):
+                       temperature, max_tokens):
     if not isinstance(d, dict):
         return model, messages, tools, tool_choice, temperature, max_tokens
     for k in _MODEL_KEYS:
         if not model and k in d:
-            model = d.get(k); break
+            model = d.get(k)
+            break
     for k in _MESSAGE_KEYS:
         if not messages and k in d:
             cand = d.get(k)
             normalized = _normalize_messages(cand)
             if normalized:
-                messages = normalized; break
+                messages = normalized
+                break
     for k in _TOOLS_KEYS:
         if tools is None and k in d:
-            tools = d.get(k); break
+            tools = d.get(k)
+            break
     for k in _TOOL_CHOICE_KEYS:
         if tool_choice is None and k in d:
-            tool_choice = d.get(k); break
+            tool_choice = d.get(k)
+            break
     for k in _TEMPERATURE_KEYS:
         if temperature is None and k in d:
-            temperature = d.get(k); break
+            temperature = d.get(k)
+            break
     for k in _MAX_TOKENS_KEYS:
         if max_tokens is None and k in d:
-            max_tokens = d.get(k); break
+            max_tokens = d.get(k)
+            break
     return model, messages, tools, tool_choice, temperature, max_tokens
 
 
@@ -593,6 +609,46 @@ _LANGUAGE_MIRROR_INSTRUCTION = (
 )
 
 
+def _agent_steps():
+    """De gedeelde denkstappen-laag (labels + bus), of ``None``.
+
+    Zie ``daadit_ai_agent_schedule.services.agent_steps``: één plek waar de
+    vaste labels en het bus-verkeer wonen, zodat Claude exact dezelfde,
+    PII-vrije regels stuurt als Mistral en Loes. Best-effort geladen.
+    """
+    try:
+        from odoo.addons.daadit_ai_agent_schedule.services import agent_steps
+        return agent_steps
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _step_text_from_use(tool_use):
+    """Bouw een vaste NL-regel voor een Anthropic ``tool_use``-blok.
+
+    Claude levert tools in een ander formaat (``{"name": ..., "input":
+    {...}}``) dan de OpenAI-stijl die de gedeelde labelfunctie verwacht.
+    We geven alleen de toolnaam door — nooit ``input`` (argumenten)."""
+    steps = _agent_steps()
+    name = (tool_use or {}).get("name") or ""
+    if steps is None:
+        return "Ik voer een actie uit"
+    return steps.label_for_tool_call({"function": {"name": name}})
+
+
+def _notify_step(agent, text, kind="think", done=False):
+    """Duw één denkstap naar de chattende gebruiker (best-effort)."""
+    steps = _agent_steps()
+    if steps is None:
+        return
+    turn_id = None
+    try:
+        turn_id = getattr(tool_dispatch.router_state, "turn_uuid", None)
+    except Exception:  # noqa: BLE001
+        turn_id = None
+    steps.emit(agent, text, turn_id=turn_id, depth=0, kind=kind, done=done)
+
+
 def _request_llm_claude(api_self, *args, **kwargs):
     """Claude-side replacement for ``LLMApiService.request_llm``."""
     _log_first_call_args(args, kwargs)
@@ -782,6 +838,18 @@ def _request_llm_claude(api_self, *args, **kwargs):
     # dezelfde worker mag deze niet als afgebroken bestempelen.
     _reset_exhaustion()
 
+    # v19.0.4.4.0: begin een verse denkstappen-beurt zodat de frontend de
+    # lijst van dit antwoord apart groepeert (Claude kent geen routing of
+    # sub-runs, dus elke aanroep is een nieuwe top-level beurt).
+    _steps = _agent_steps()
+    if _steps is not None:
+        try:
+            _steps.begin_turn(
+                getattr(tool_dispatch.router_state, "turn_uuid", None)
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
     while iteration < MAX_ITER:
         # Harde tijdgrens voor wie een hele run bezit. Tussen de
         # round-trips gecontroleerd, dus een run kan hooguit één call
@@ -797,6 +865,14 @@ def _request_llm_claude(api_self, *args, **kwargs):
                 "%d iteratie(s) — tool-lus afgebroken", iteration,
             )
             break
+
+        # v19.0.4.4.0: zichtbare denkstappen. De langste stilte zit vóór de
+        # round-trip — het wachten op het model. Meld die ronde.
+        _notify_step(
+            agent,
+            "Ik kijk ernaar" if iteration == 0
+            else "Ik verwerk wat ik heb opgehaald",
+        )
 
         response = client.create_message(
             model=model,
@@ -829,6 +905,10 @@ def _request_llm_claude(api_self, *args, **kwargs):
 
         tool_result_blocks = []
         for tu in tool_uses:
+            # Vertel wat er gebeurt terwijl het gebeurt, uit de vaste
+            # labelset (nooit de tool-input of het -resultaat).
+            _notify_step(agent, _step_text_from_use(tu), kind="tool")
+
             result = tool_dispatch.run_tool_call(agent, tu)
 
             if isinstance(result, dict) and result.get("_daadit_access_denied"):
