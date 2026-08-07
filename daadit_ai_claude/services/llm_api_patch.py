@@ -455,7 +455,11 @@ def _resolve_agent(api_self):
             return None
         if isinstance(ch, int):
             ch = api_self.env["discuss.channel"].sudo().browse(ch)
-        if hasattr(ch, "sudo") and hasattr(ch, "ai_agent_id"):
+        # `"ai_agent_id" in ch._fields` checks the field EXISTS on the model
+        # without reading it. `hasattr(ch, "ai_agent_id")` would trigger a
+        # real read and raise AccessError (uid lacks read rights on
+        # discuss.channel.ai_agent_id) — the value itself is read via sudo() below.
+        if hasattr(ch, "sudo") and "ai_agent_id" in ch._fields:
             agent_id = ch.sudo().ai_agent_id.id
             if agent_id:
                 ag = api_self.env["ai.agent"].browse(agent_id)
