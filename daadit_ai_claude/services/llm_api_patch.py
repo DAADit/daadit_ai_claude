@@ -494,7 +494,7 @@ def _max_iterations(env):
     typefout de agent niet lamlegt of laat ontsporen.
     """
     try:
-        raw = env["ir.config_parameter"].sudo().get_param(_MAX_ITER_ICP)
+        raw = env["ir.config_parameter"].sudo().get_str(_MAX_ITER_ICP)
         return max(1, min(int(str(raw).strip()), 40))
     except (TypeError, ValueError):
         return _MAX_ITER_DEFAULT
@@ -541,7 +541,7 @@ def _cap_tool_result(env, content):
     Tunable via ``daadit_ai_claude.max_tool_result_chars``; 0 disables.
     """
     try:
-        raw = env["ir.config_parameter"].sudo().get_param(
+        raw = env["ir.config_parameter"].sudo().get_str(
             "daadit_ai_claude.max_tool_result_chars",
             _DEFAULT_MAX_TOOL_RESULT_CHARS,
         )

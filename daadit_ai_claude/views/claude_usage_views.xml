@@ -80,9 +80,9 @@
                 <filter name="chat" string="Chat" domain="[('kind', '=', 'chat')]"/>
                 <separator/>
                 <filter name="today" string="Today"
-                        domain="[('create_date', '&gt;=', context_today().strftime('%Y-%m-%d 00:00:00'))]"/>
+                        domain="[('create_date', '&gt;=', 'now')]"/>
                 <filter name="last_7" string="Last 7 days"
-                        domain="[('create_date', '&gt;=', (context_today() - relativedelta(days=7)).strftime('%Y-%m-%d 00:00:00'))]"/>
+                        domain="[('create_date', '&gt;=', '-7d')]"/>
                 <group>
                     <filter name="group_user" string="User" context="{'group_by': 'user_id'}"/>
                     <filter name="group_agent" string="Agent" context="{'group_by': 'agent_id'}"/>

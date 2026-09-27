@@ -174,7 +174,7 @@ class ClaudeClient:
     def from_env(cls, env) -> "ClaudeClient":
         """Build a client from ``ir.config_parameter`` values."""
         ICP = env["ir.config_parameter"].sudo()
-        if ICP.get_param("daadit_ai_claude.claude_key_enabled") not in (
+        if ICP.get_str("daadit_ai_claude.claude_key_enabled") not in (
             "True",
             "1",
             True,
@@ -184,16 +184,16 @@ class ClaudeClient:
                 "Anthropic account' in General Settings → AI."
             ))
         return cls(
-            api_key=ICP.get_param("daadit_ai_claude.claude_key", default=""),
-            base_url=ICP.get_param(
+            api_key=ICP.get_str("daadit_ai_claude.claude_key", default=""),
+            base_url=ICP.get_str(
                 "daadit_ai_claude.claude_base_url",
                 default="https://api.anthropic.com/v1",
             ),
             timeout=int(
-                ICP.get_param("daadit_ai_claude.claude_timeout", default="60")
+                ICP.get_str("daadit_ai_claude.claude_timeout", default="60")
                 or 60
             ),
-            anthropic_version=ICP.get_param(
+            anthropic_version=ICP.get_str(
                 "daadit_ai_claude.claude_api_version",
                 default=DEFAULT_ANTHROPIC_VERSION,
             ),

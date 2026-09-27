@@ -164,7 +164,7 @@ class ResConfigSettings(models.TransientModel):
 
         allowed = set(_DEFAULT_ALLOWED_HOSTS)
         try:
-            extra = env["ir.config_parameter"].sudo().get_param(
+            extra = env["ir.config_parameter"].sudo().get_str(
                 "daadit_ai_claude.allowed_base_url_hosts", default=""
             ) or ""
             for entry in extra.split(","):

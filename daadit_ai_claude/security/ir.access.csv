@@ -1,0 +1,5 @@
+id,name,model_id,group_id/id,operation,domain
+rule_daadit_ai_claude_usage_user_own,Claude usage: user sees own rows,daadit_ai_claude.usage,base.group_user,r,"[('user_id', '=', user.id)]"
+rule_daadit_ai_claude_usage_system_company,Claude usage: settings users see own company,daadit_ai_claude.usage,base.group_system,crud,"['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]"
+access_daadit_ai_claude_model_user,daadit.ai.claude.model user read,daadit.ai.claude.model,base.group_user,r,
+access_daadit_ai_claude_model_system,daadit.ai.claude.model system,daadit.ai.claude.model,base.group_system,crud,

@@ -72,7 +72,7 @@ def _today_start_utc(env):
 def _float_param(env, key):
     """Read ``key`` as a positive float, or 0.0 when unset/unparseable."""
     try:
-        raw = env["ir.config_parameter"].sudo().get_param(key, "0")
+        raw = env["ir.config_parameter"].sudo().get_str(key, "0")
         value = float(str(raw).strip().replace(",", "."))
         return value if value > 0 else 0.0
     except Exception:  # noqa: BLE001
@@ -168,10 +168,10 @@ def _notify_once(env, spent, cap, shared=False):
     try:
         icp = env["ir.config_parameter"].sudo()
         today = _today_start_utc(env).strftime("%Y-%m-%d")
-        if icp.get_param(_NOTIFIED_ON_ICP) == today:
+        if icp.get_str(_NOTIFIED_ON_ICP) == today:
             return  # already told them today
 
-        recipient = (icp.get_param(_NOTIFY_EMAIL_ICP) or "").strip()
+        recipient = (icp.get_str(_NOTIFY_EMAIL_ICP) or "").strip()
         if not recipient:
             admin = env.ref("base.user_admin", raise_if_not_found=False)
             recipient = (
@@ -184,7 +184,7 @@ def _notify_once(env, spent, cap, shared=False):
                 "(%.2f/%.2f) but no notify recipient configured "
                 "(set %s).", spent, cap, _NOTIFY_EMAIL_ICP,
             )
-            icp.set_param(_NOTIFIED_ON_ICP, today)
+            icp.set_str(_NOTIFIED_ON_ICP, today)
             return
 
         scope = (
@@ -212,7 +212,7 @@ def _notify_once(env, spent, cap, shared=False):
             "auto_delete": True,
         })
         mail.send()
-        icp.set_param(_NOTIFIED_ON_ICP, today)
+        icp.set_str(_NOTIFIED_ON_ICP, today)
         _logger.warning(
             "daadit_ai_claude.cost_cap: daily budget reached "
             "(%.2f/%.2f, shared=%s) — notified %s and paused Claude "

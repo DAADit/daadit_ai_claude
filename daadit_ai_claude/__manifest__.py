@@ -48,7 +48,7 @@ user/assistant turns, and tool calls travel as ``content`` blocks of
 out of that envelope so the rest of Odoo's AI plumbing (topics, tool
 actions, language mirroring) keeps working unchanged.
 """,
-    "version": "19.0.4.3.0",
+    "version": "20.0.4.3.0",
     "category": "Productivity/Discuss",
     "author": "DAADit",
     "website": "https://daadit.group",
@@ -62,8 +62,6 @@ actions, language mirroring) keeps working unchanged.
         "python": ["requests"],
     },
     "data": [
-        "security/ir.model.access.csv",
-        "security/claude_usage_security.xml",
         "data/claude_models_seed.xml",
         "data/cost_cap_params.xml",
         "data/ir_cron.xml",
@@ -72,6 +70,7 @@ actions, language mirroring) keeps working unchanged.
         "views/ai_agent_views.xml",
         "views/claude_model_views.xml",
         "views/res_partner_views.xml",
+        'security/ir.access.csv',
     ],
     "pre_init_hook": "pre_init_hook",
     "uninstall_hook": "uninstall_hook",
