@@ -41,7 +41,7 @@ _PRICING_USD_PER_1M = {
 def _get_unit_price(env, model_id, kind):
     icp = env["ir.config_parameter"].sudo()
     key = f"daadit_ai_claude.price.{model_id}.{kind}"
-    raw = icp.get_param(key)
+    raw = icp.get_str(key)
     if raw:
         try:
             return float(raw)

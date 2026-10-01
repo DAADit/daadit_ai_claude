@@ -628,7 +628,7 @@ _LOG_TOOL_FLAG_WARNED = False
 def _result_logging_enabled(env):
     global _LOG_TOOL_FLAG_WARNED
     try:
-        flag = env["ir.config_parameter"].sudo().get_param(
+        flag = env["ir.config_parameter"].sudo().get_str(
             _LOG_TOOL_FLAG_ICP, default="False"
         )
     except Exception:  # noqa: BLE001

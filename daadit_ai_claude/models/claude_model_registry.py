@@ -45,10 +45,10 @@ class DaaditAiClaudeModel(models.Model):
     )
     last_synced = fields.Datetime(readonly=True)
 
-    _sql_constraints = [
-        ("technical_name_uniq", "unique(technical_name)",
-         "This Claude model id already exists in the registry."),
-    ]
+    _technical_name_uniq = models.Constraint(
+        'unique(technical_name)',
+        "This Claude model id already exists in the registry.",
+    )
 
     # ------------------------------------------------------------------ #
     # Selection source                                                   #
@@ -161,7 +161,7 @@ class DaaditAiClaudeModel(models.Model):
         """Daily cron entry point. Never raises — a transient API error
         must not leave the scheduled action in a failed state."""
         ICP = self.env["ir.config_parameter"].sudo()
-        if ICP.get_param("daadit_ai_claude.claude_key_enabled") not in (
+        if ICP.get_str("daadit_ai_claude.claude_key_enabled") not in (
             "True", "1", True,
         ):
             _logger.info(
