@@ -27,6 +27,8 @@ import logging
 import re
 import threading
 
+from odoo import SUPERUSER_ID as _SUPERUSER_ID, api as _api
+
 _logger = logging.getLogger(__name__)
 
 # Threadlocal where the ai.agent's _get_provider override stashes the
@@ -647,11 +649,22 @@ def _result_logging_enabled(env):
     return on
 
 
+def write_log_row(env, vals):
+    """Schrijf een ``ir.logging``-rij op een eigen cursor.
+
+    De rij blijft staan als de aanroeper terugdraait, en de transactie
+    van de aanroeper (met de savepoint van een geplande run) blijft
+    ongemoeid.
+    """
+    with env.registry.cursor() as cr:
+        _api.Environment(cr, _SUPERUSER_ID, {})["ir.logging"].create(vals)
+
+
 def _record_in_ir_logging(env, level, name, message):
     if level == "INFO" and not _result_logging_enabled(env):
         return
     try:
-        env["ir.logging"].sudo().create({
+        write_log_row(env, {
             "name": name,
             "type": "server",
             "level": level,
@@ -660,7 +673,6 @@ def _record_in_ir_logging(env, level, name, message):
             "func": "run_tool_call",
             "line": "0",
         })
-        env.cr.commit()
     except Exception:  # noqa: BLE001
         pass
 
