@@ -506,7 +506,23 @@ def _max_iterations(env):
         return _MAX_ITER_DEFAULT
 
 
+def _flag_subrun_exhausted():
+    """Tell Mistral's router that the sub-run it started gave up."""
+    for module_name in (
+        "odoo.addons.daadit_ai_mistral.services.tool_dispatch",
+        "daadit_ai_mistral.services.tool_dispatch",
+    ):
+        try:
+            dispatch = importlib.import_module(module_name)
+        except ImportError:
+            continue
+        dispatch.router_state.exhausted = True
+        return
+
+
 def _reset_exhaustion():
+    if _mistral_router_depth() > 0:
+        return
     try:
         tool_dispatch.router_state.top_level_exhausted = False
         tool_dispatch.router_state.exhaustion_reason = None
@@ -518,9 +534,14 @@ def _flag_exhausted(reason):
     """Meld dat deze beurt is afgebroken.
 
     De scheduler leest dit om de run 'error' te geven in plaats van
-    'done'. Best-effort: het signaal mag het antwoord nooit kosten.
+    'done'. Binnen een gedelegeerde sub-run faalt alleen die delegatie:
+    de router van de ouder hoort het, de run van de ouder niet.
+    Best-effort: het signaal mag het antwoord nooit kosten.
     """
     try:
+        if _mistral_router_depth() > 0:
+            _flag_subrun_exhausted()
+            return
         tool_dispatch.router_state.top_level_exhausted = True
         tool_dispatch.router_state.exhaustion_reason = reason
     except Exception:  # noqa: BLE001
