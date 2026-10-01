@@ -1,5 +1,12 @@
 # Changelog — daadit_ai_claude
 
+## 19.0.4.4.1 — 2026-10-01 — logregels op een eigen cursor (taak 1488)
+
+- Diagnose- en toolregels in `ir.logging` worden op een eigen cursor
+  geschreven in plaats van met `env.cr.commit()` op de cursor van de
+  aanroeper. Een geplande run houdt zo zijn savepoint en kan bij een fout
+  lokaal terugdraaien; de logregel blijft toch staan.
+
 ## 19.0.4.3.0 — 2026-07-26
 
 Een half rapport heet niet langer 'klaar'.
