@@ -1,5 +1,10 @@
 # Changelog — daadit_ai_claude
 
+## 19.0.4.5.0 — 2026-10-07 — de toolaanroepen draaien in daadit_ai_agentic_system
+
+- `services/tool_dispatch.py` vertaalt alleen nog het Anthropic-formaat (`tool_use`, `input_schema`); de uitvoering zit in `daadit_ai_agentic_system`.
+- Claude gebruikt dezelfde routerstatus als Mistral en Loes, ook zonder dat `daadit_ai_mistral` geïnstalleerd is.
+
 ## 19.0.4.4.2 — 2026-10-06 — een verkeerd genoemde tool is geen kapotte run
 
 - `claims` als tool aangeroepen geeft het verantwoordingsblok terug met de

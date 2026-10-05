@@ -23,7 +23,6 @@ Key Anthropic-specific quirks handled in this module:
 * **``max_tokens`` is required** — every call must specify it. The
   ``ClaudeClient`` falls back to a 4096 default when none is provided.
 """
-import importlib
 import json
 import logging
 import time
@@ -435,20 +434,9 @@ def _last_user_message_text(messages):
     return ""
 
 
-def _mistral_router_depth():
-    """Read Mistral's router depth when the optional module is installed."""
-    for module_name in (
-        "odoo.addons.daadit_ai_mistral.services.tool_dispatch",
-        "daadit_ai_mistral.services.tool_dispatch",
-    ):
-        try:
-            dispatch = importlib.import_module(module_name)
-            return getattr(dispatch.router_state, "depth", 0)
-        except (ImportError, AttributeError):
-            continue
-        except Exception:  # noqa: BLE001
-            return 1
-    return 0
+def _router_depth():
+    """Delegatiediepte van de lopende beurt (gedeelde routerstatus)."""
+    return getattr(tool_dispatch.router_state, "depth", 0)
 
 
 def _resolve_agent(api_self):
@@ -523,21 +511,12 @@ def _max_iterations(env):
 
 
 def _flag_subrun_exhausted():
-    """Tell Mistral's router that the sub-run it started gave up."""
-    for module_name in (
-        "odoo.addons.daadit_ai_mistral.services.tool_dispatch",
-        "daadit_ai_mistral.services.tool_dispatch",
-    ):
-        try:
-            dispatch = importlib.import_module(module_name)
-        except ImportError:
-            continue
-        dispatch.router_state.exhausted = True
-        return
+    """Meld de router dat de sub-run die hij startte opgaf."""
+    tool_dispatch.router_state.exhausted = True
 
 
 def _reset_exhaustion():
-    if _mistral_router_depth() > 0:
+    if _router_depth() > 0:
         return
     try:
         tool_dispatch.router_state.top_level_exhausted = False
@@ -555,7 +534,7 @@ def _flag_exhausted(reason):
     Best-effort: het signaal mag het antwoord nooit kosten.
     """
     try:
-        if _mistral_router_depth() > 0:
+        if _router_depth() > 0:
             _flag_subrun_exhausted()
             return
         tool_dispatch.router_state.top_level_exhausted = True
@@ -988,7 +967,7 @@ def _request_llm_claude(api_self, *args, **kwargs):
         if (
             agent
             and model_name
-            and _mistral_router_depth() == 0
+            and _router_depth() == 0
             and hasattr(agent, "_daadit_find_delegate_for_model")
             and hasattr(agent, "_ai_tool_ask_agent")
         ):

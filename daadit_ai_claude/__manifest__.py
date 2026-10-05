@@ -48,7 +48,7 @@ user/assistant turns, and tool calls travel as ``content`` blocks of
 out of that envelope so the rest of Odoo's AI plumbing (topics, tool
 actions, language mirroring) keeps working unchanged.
 """,
-    "version": "19.0.4.4.2",
+    "version": "19.0.4.5.0",
     "category": "Productivity/Discuss",
     "author": "DAADit",
     "website": "https://daadit.group",
@@ -57,6 +57,7 @@ actions, language mirroring) keeps working unchanged.
         "base",
         "ai",
         "ai_app",
+        "daadit_ai_agentic_system",
     ],
     "external_dependencies": {
         "python": ["requests"],
