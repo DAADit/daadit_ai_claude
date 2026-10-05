@@ -1,5 +1,13 @@
 # Changelog — daadit_ai_claude
 
+## 19.0.4.4.2 — 2026-10-06 — een verkeerd genoemde tool is geen kapotte run
+
+- `claims` als tool aangeroepen geeft het verantwoordingsblok terug met de
+  vraag het in het eindantwoord te zetten, in plaats van `Unknown tool`.
+- `ir_actions_server_<x>` waar precies één eigen tool van de agent op
+  `_<x>` eindigt, is die tool. Passen er twee, dan blijft het onbekend.
+  Gelijk aan `daadit_ai_mistral` 19.0.10.3.6.
+
 ## 19.0.4.4.1 — 2026-10-01 — logregels op een eigen cursor (taak 1488)
 
 - Diagnose- en toolregels in `ir.logging` worden op een eigen cursor

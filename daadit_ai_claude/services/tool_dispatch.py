@@ -89,6 +89,54 @@ def _tool_name_to_method(tool_name: str) -> str:
 _ACTION_ID_RE = re.compile(r"^action_(\d+)$")
 
 
+# Het verantwoordingsblok (```claims) hoort in het eindantwoord, maar een
+# model roept het soms aan als tool. Dat is geen fout van de collega: het
+# blok komt terug, met de vraag het in het antwoord te zetten.
+CLAIMS_PSEUDO_TOOLS = ("claims", "verantwoording")
+
+
+def claims_pseudo_tool_result(fn_name, kwargs):
+    """Het antwoord op een ``claims``-aanroep, of ``None`` als het een
+    gewone tool is."""
+    if (fn_name or "").strip().lower() not in CLAIMS_PSEUDO_TOOLS:
+        return None
+    claims = kwargs.get("claims") if isinstance(kwargs, dict) else kwargs
+    if not isinstance(claims, list):
+        claims = []
+    block = "```claims\n%s\n```" % json.dumps(claims, ensure_ascii=False)
+    return {
+        "ok": True,
+        "not_a_tool": True,
+        "note": (
+            "claims is geen tool. Zet dit blok letterlijk aan het eind "
+            "van je eindantwoord; roep het niet nog een keer aan."
+        ),
+        "claims_block": block,
+    }
+
+
+def _slugify(text):
+    return re.sub(r"[^a-z0-9]+", "_", (text or "").strip().lower()).strip("_")
+
+
+def _unique_suffix_action(agent, bare):
+    """De enige eigen tool van de agent waarvan de naam op ``_<bare>``
+    eindigt (``ir_actions_server_zoeken`` → "AI: Administratie Zoeken").
+    Passen er twee, dan gokken we niet."""
+    if not bare:
+        return None
+    tools = agent.sudo().topic_ids.tool_ids.filtered(lambda a: a.use_in_ai)
+    suffix = "_" + bare
+    hits = []
+    for act in tools:
+        name = act.name or ""
+        part = name.split(":", 1)[1] if ":" in name else name
+        if any(slug.endswith(suffix) or slug == bare
+               for slug in (_slugify(name), _slugify(part))):
+            hits.append(act)
+    return hits[0] if len(hits) == 1 else None
+
+
 def _resolve_tool_action(agent, fn_name):
     """Resolve a tool name to its backing ``ir.actions.server`` record.
 
@@ -118,6 +166,13 @@ def _resolve_tool_action(agent, fn_name):
                 candidate = Action.browse(imd.res_id)
                 if candidate.exists():
                     action = candidate
+        if (
+            action is None
+            and (fn_name or "").startswith(_TOOL_PREFIX)
+            and not callable(getattr(agent, _tool_name_to_method(fn_name),
+                                     None))
+        ):
+            action = _unique_suffix_action(agent, fn_name[len(_TOOL_PREFIX):])
         if action is not None and action.use_in_ai:
             return action.with_env(env)
     except Exception:  # noqa: BLE001
@@ -719,6 +774,10 @@ def run_tool_call(agent, tool_use):
             f"Could not parse tool input as JSON: {exc}. "
             f"Pass arguments as a JSON object whose values are typed."
         )}
+
+    pseudo = claims_pseudo_tool_result(fn_name, kwargs)
+    if pseudo is not None:
+        return pseudo
 
     action = _resolve_tool_action(agent, fn_name)
     method_name = _tool_name_to_method(fn_name)
