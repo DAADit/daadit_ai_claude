@@ -5,6 +5,18 @@ Adds a partner-form button that anonymises every
 ``daadit_ai_claude.usage`` row linked to this partner's internal
 users. Aggregate cost figures (tokens + USD estimate) are kept; only
 the user identifier is removed.
+
+De knop op de relatiekaart is op 6 oktober 2026 weggehaald: elke module
+maakte daarvoor zijn eigen ``<header>`` boven de sheet (de standaard
+``res.partner``-form heeft er geen), wat vier gekleurde balken op elke
+contactkaart opleverde. De wissing loopt nu via ``daadit.gdpr.erase``
+in ``daadit_mcp_multi_tenant`` — tandwielmenu op de relatiekaart, alle
+sporen in één venster met de aantallen erbij. Deze methode blijft de
+uitvoering doen en wordt daar op naam aangeroepen; hernoem hem niet.
+
+Let op: de rechtencontrole zat in het ``groups``-attribuut van die
+knop en is met de knop verdwenen. Ze staat nu in de wizard; roep deze
+methode dus niet aan zonder die controle.
 """
 import logging
 
