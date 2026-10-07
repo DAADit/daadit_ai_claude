@@ -35,6 +35,26 @@ _logger = logging.getLogger(__name__)
 _PATCHED = False
 
 
+# Welke provider een embeddingmodel levert. Anthropic levert er geen;
+# een Claude-agent gebruikt het model dat ai.agent._get_embedding_model
+# teruggeeft en die aanroep moet bij de juiste provider uitkomen.
+_EMBEDDING_PROVIDERS = (
+    ("text-embedding", "openai"),
+    ("gemini-embedding", "google"),
+    ("mistral-embed", "mistral"),
+    ("loes-embed", "loes"),
+)
+
+
+def embedding_provider_for_model(model):
+    """De provider voor ``model``; OpenAI als we het niet herkennen."""
+    name = (model or "").strip().lower()
+    for prefix, provider in _EMBEDDING_PROVIDERS:
+        if name.startswith(prefix):
+            return provider
+    return "openai"
+
+
 def patch_llm_api_service() -> bool:
     """Install the Claude-aware patch on ``LLMApiService``."""
     global _PATCHED
@@ -72,6 +92,7 @@ def patch_llm_api_service() -> bool:
 
     original_init = LLMApiService.__init__
     original_request_llm = getattr(LLMApiService, "request_llm", None)
+    original_get_embedding = getattr(LLMApiService, "get_embedding", None)
 
     # If another provider module has already wrapped __init__, we
     # compose patches so they coexist — we short-circuit on our own
@@ -109,12 +130,43 @@ def patch_llm_api_service() -> bool:
             except Exception:  # noqa: BLE001
                 pass
 
+    def _patched_get_embedding(api_self, *args, **kwargs):
+        """Embeddings voor een Claude-agent via de provider van het model.
+
+        Anthropic heeft geen embeddings-API. Stock bouwt bij een chat
+        met een agent met kennisbronnen eerst de RAG-context: het maakt
+        een ``LLMApiService`` met de provider van de agent (bij ons
+        'anthropic') en roept daarop ``get_embedding`` aan. Stock
+        ``_get_api_token`` kent alleen openai en google en weigert met
+        "Unsupported provider 'anthropic'" — dat brak het chatvenster
+        van Hilda (7 okt 2026) terwijl de geplande runs, die geen RAG
+        doen, gewoon werkten. We sturen de aanroep door naar de
+        provider die het gevraagde embeddingmodel levert.
+        """
+        if getattr(api_self, "provider", None) not in ("anthropic", "claude"):
+            if original_get_embedding is None:
+                raise AttributeError(
+                    "LLMApiService.get_embedding not found on stock; "
+                    "cannot delegate non-Claude call."
+                )
+            return original_get_embedding(api_self, *args, **kwargs)
+        target = embedding_provider_for_model(kwargs.get("model"))
+        _logger.info(
+            "daadit_ai_claude: embedding voor Claude-agent doorgestuurd "
+            "naar provider %s (model %s)", target, kwargs.get("model"),
+        )
+        delegate = LLMApiService(env=api_self.env, provider=target)
+        return delegate.get_embedding(*args, **kwargs)
+
     LLMApiService.__init__ = _patched_init
     if original_request_llm is not None:
         LLMApiService.request_llm = _patched_request_llm
+    if original_get_embedding is not None:
+        LLMApiService.get_embedding = _patched_get_embedding
     LLMApiService._daadit_claude_patched = True
     LLMApiService._daadit_claude_original_init = original_init
     LLMApiService._daadit_claude_original_request_llm = original_request_llm
+    LLMApiService._daadit_claude_original_get_embedding = original_get_embedding
 
     _PATCHED = True
     _logger.info(
