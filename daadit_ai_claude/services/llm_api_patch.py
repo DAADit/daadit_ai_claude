@@ -23,7 +23,6 @@ Key Anthropic-specific quirks handled in this module:
 * **``max_tokens`` is required** — every call must specify it. The
   ``ClaudeClient`` falls back to a 4096 default when none is provided.
 """
-import importlib
 import json
 import logging
 import time
@@ -34,6 +33,26 @@ from . import tool_dispatch
 _logger = logging.getLogger(__name__)
 
 _PATCHED = False
+
+
+# Welke provider een embeddingmodel levert. Anthropic levert er geen;
+# een Claude-agent gebruikt het model dat ai.agent._get_embedding_model
+# teruggeeft en die aanroep moet bij de juiste provider uitkomen.
+_EMBEDDING_PROVIDERS = (
+    ("text-embedding", "openai"),
+    ("gemini-embedding", "google"),
+    ("mistral-embed", "mistral"),
+    ("loes-embed", "loes"),
+)
+
+
+def embedding_provider_for_model(model):
+    """De provider voor ``model``; OpenAI als we het niet herkennen."""
+    name = (model or "").strip().lower()
+    for prefix, provider in _EMBEDDING_PROVIDERS:
+        if name.startswith(prefix):
+            return provider
+    return "openai"
 
 
 def patch_llm_api_service() -> bool:
@@ -73,6 +92,7 @@ def patch_llm_api_service() -> bool:
 
     original_init = LLMApiService.__init__
     original_request_llm = getattr(LLMApiService, "request_llm", None)
+    original_get_embedding = getattr(LLMApiService, "get_embedding", None)
 
     # If another provider module has already wrapped __init__, we
     # compose patches so they coexist — we short-circuit on our own
@@ -110,12 +130,43 @@ def patch_llm_api_service() -> bool:
             except Exception:  # noqa: BLE001
                 pass
 
+    def _patched_get_embedding(api_self, *args, **kwargs):
+        """Embeddings voor een Claude-agent via de provider van het model.
+
+        Anthropic heeft geen embeddings-API. Stock bouwt bij een chat
+        met een agent met kennisbronnen eerst de RAG-context: het maakt
+        een ``LLMApiService`` met de provider van de agent (bij ons
+        'anthropic') en roept daarop ``get_embedding`` aan. Stock
+        ``_get_api_token`` kent alleen openai en google en weigert met
+        "Unsupported provider 'anthropic'" — dat brak het chatvenster
+        van Hilda (7 okt 2026) terwijl de geplande runs, die geen RAG
+        doen, gewoon werkten. We sturen de aanroep door naar de
+        provider die het gevraagde embeddingmodel levert.
+        """
+        if getattr(api_self, "provider", None) not in ("anthropic", "claude"):
+            if original_get_embedding is None:
+                raise AttributeError(
+                    "LLMApiService.get_embedding not found on stock; "
+                    "cannot delegate non-Claude call."
+                )
+            return original_get_embedding(api_self, *args, **kwargs)
+        target = embedding_provider_for_model(kwargs.get("model"))
+        _logger.info(
+            "daadit_ai_claude: embedding voor Claude-agent doorgestuurd "
+            "naar provider %s (model %s)", target, kwargs.get("model"),
+        )
+        delegate = LLMApiService(env=api_self.env, provider=target)
+        return delegate.get_embedding(*args, **kwargs)
+
     LLMApiService.__init__ = _patched_init
     if original_request_llm is not None:
         LLMApiService.request_llm = _patched_request_llm
+    if original_get_embedding is not None:
+        LLMApiService.get_embedding = _patched_get_embedding
     LLMApiService._daadit_claude_patched = True
     LLMApiService._daadit_claude_original_init = original_init
     LLMApiService._daadit_claude_original_request_llm = original_request_llm
+    LLMApiService._daadit_claude_original_get_embedding = original_get_embedding
 
     _PATCHED = True
     _logger.info(
@@ -435,20 +486,9 @@ def _last_user_message_text(messages):
     return ""
 
 
-def _mistral_router_depth():
-    """Read Mistral's router depth when the optional module is installed."""
-    for module_name in (
-        "odoo.addons.daadit_ai_mistral.services.tool_dispatch",
-        "daadit_ai_mistral.services.tool_dispatch",
-    ):
-        try:
-            dispatch = importlib.import_module(module_name)
-            return getattr(dispatch.router_state, "depth", 0)
-        except (ImportError, AttributeError):
-            continue
-        except Exception:  # noqa: BLE001
-            return 1
-    return 0
+def _router_depth():
+    """Delegatiediepte van de lopende beurt (gedeelde routerstatus)."""
+    return getattr(tool_dispatch.router_state, "depth", 0)
 
 
 def _resolve_agent(api_self):
@@ -523,21 +563,12 @@ def _max_iterations(env):
 
 
 def _flag_subrun_exhausted():
-    """Tell Mistral's router that the sub-run it started gave up."""
-    for module_name in (
-        "odoo.addons.daadit_ai_mistral.services.tool_dispatch",
-        "daadit_ai_mistral.services.tool_dispatch",
-    ):
-        try:
-            dispatch = importlib.import_module(module_name)
-        except ImportError:
-            continue
-        dispatch.router_state.exhausted = True
-        return
+    """Meld de router dat de sub-run die hij startte opgaf."""
+    tool_dispatch.router_state.exhausted = True
 
 
 def _reset_exhaustion():
-    if _mistral_router_depth() > 0:
+    if _router_depth() > 0:
         return
     try:
         tool_dispatch.router_state.top_level_exhausted = False
@@ -555,7 +586,7 @@ def _flag_exhausted(reason):
     Best-effort: het signaal mag het antwoord nooit kosten.
     """
     try:
-        if _mistral_router_depth() > 0:
+        if _router_depth() > 0:
             _flag_subrun_exhausted()
             return
         tool_dispatch.router_state.top_level_exhausted = True
@@ -988,7 +1019,7 @@ def _request_llm_claude(api_self, *args, **kwargs):
         if (
             agent
             and model_name
-            and _mistral_router_depth() == 0
+            and _router_depth() == 0
             and hasattr(agent, "_daadit_find_delegate_for_model")
             and hasattr(agent, "_ai_tool_ask_agent")
         ):
