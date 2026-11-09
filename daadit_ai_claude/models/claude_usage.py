@@ -26,19 +26,49 @@ _logger = logging.getLogger(__name__)
 
 
 # Pricing snapshot — USD per 1,000,000 tokens (input, output).
-# Source: anthropic.com/pricing. May lag — override via ICP.
+# Bron: de modellentabel van Anthropic, stand 3 november 2026. Loopt
+# achter zodra er een model bijkomt — overschrijven kan via ICP.
+#
+# v19.0.4.5.3: de 5.x-familie stond hier niet. Bo werkt sinds begin
+# november 2026 op ``claude-haiku-5-5`` en elke run werd daardoor op
+# nul dollar geteld: 116 regels, 24,5 miljoen tokens, kosten 0,00. Een
+# meter die een onbekend model gratis vindt, is geen meter. Opus 4.7
+# stond bovendien op 15/75 terwijl het 5/25 is.
+#
+# Haiku 5.5 kost boven de 100.000 tokens per prompt vijf keer zoveel
+# (0,50 / 2,50). Een regel hier telt de tokens van alle rondes van een
+# beurt bij elkaar, dus welke prompt over die grens ging is niet meer
+# te zien. We rekenen met het basistarief; het echte bedrag kan voor
+# zulke beurten hoger liggen.
 _PRICING_USD_PER_1M = {
-    # Claude 4.x family (current as of 2026-05)
-    "claude-opus-4-7":          (15.0, 75.0),
+    "claude-fable-5-2":         (8.0,  40.0),
+    "claude-fable-5-1":         (10.0, 50.0),
+    "claude-fable-5":           (10.0, 50.0),
+    "claude-opus-5-5":          (4.0,  20.0),
+    "claude-opus-5":            (5.0,  25.0),
+    "claude-opus-4-8":          (5.0,  25.0),
+    "claude-opus-4-7":          (5.0,  25.0),
+    "claude-opus-4-6":          (5.0,  25.0),
+    "claude-sonnet-5-5":        (2.0,  10.0),
+    "claude-sonnet-5":          (2.0,  10.0),
     "claude-sonnet-4-6":        (3.0,  15.0),
+    "claude-haiku-5-5":         (0.1,  0.5),
     "claude-haiku-4-5-20251001": (1.0,  5.0),
+    "claude-haiku-4-5":         (1.0,  5.0),
+    # Ouder, niet meer in de tabel van Anthropic; laten staan voor
+    # regels uit het verleden.
     "claude-opus-4-5":          (15.0, 75.0),
     "claude-sonnet-4-5":        (3.0,  15.0),
-    "claude-haiku-4-5":         (1.0,  5.0),
 }
 
 
 def _get_unit_price(env, model_id, kind):
+    """USD per 1M tokens voor ``kind`` ('input' of 'output').
+
+    Volgorde: ICP-overschrijving, dan de tabel hierboven. Geeft 0.0 als
+    het model nergens staat — wie een bedrag nodig heeft gebruikt
+    ``_resolve_unit_prices``, dat een onbekend model niet gratis laat.
+    """
     icp = env["ir.config_parameter"].sudo()
     key = f"daadit_ai_claude.price.{model_id}.{kind}"
     raw = icp.get_param(key)
@@ -51,6 +81,33 @@ def _get_unit_price(env, model_id, kind):
     if not pair:
         return 0.0
     return pair[0] if kind == "input" else pair[1]
+
+
+def _fallback_unit_prices():
+    """Het duurste tarief dat we kennen, per richting.
+
+    Voor een model dat niet in de tabel staat. Te hoog tellen laat een
+    budgetgrens te vroeg dichtgaan en dat merkt iemand; te laag tellen
+    (nul) merkt niemand tot de rekening van de provider komt.
+    """
+    return (
+        max(pair[0] for pair in _PRICING_USD_PER_1M.values()),
+        max(pair[1] for pair in _PRICING_USD_PER_1M.values()),
+    )
+
+
+def _resolve_unit_prices(env, model_id):
+    """``(input, output, bekend)`` voor het vastleggen van verbruik.
+
+    ``bekend`` is False als geen van beide richtingen een prijs heeft;
+    dan komen de tarieven uit ``_fallback_unit_prices``.
+    """
+    unit_in = _get_unit_price(env, model_id or "", "input")
+    unit_out = _get_unit_price(env, model_id or "", "output")
+    if unit_in or unit_out:
+        return unit_in, unit_out, True
+    fallback_in, fallback_out = _fallback_unit_prices()
+    return fallback_in, fallback_out, False
 
 
 class ClaudeUsage(models.Model):
@@ -126,6 +183,14 @@ class ClaudeUsage(models.Model):
         compute="_compute_estimated_cost",
         store=True,
     )
+    price_fallback = fields.Boolean(
+        string="Prijs geschat",
+        index=True,
+        help="Het model stond niet in de prijstabel; er is gerekend met "
+             "het duurste tarief dat we kennen. Zet de echte prijs in "
+             "de tabel of als systeemparameter "
+             "(daadit_ai_claude.price.<model>.input / .output).",
+    )
 
     # ------------------------------------------------------------------
     @api.depends("prompt_tokens", "completion_tokens")
@@ -158,8 +223,14 @@ class ClaudeUsage(models.Model):
         so we wrap creation in a savepoint and swallow exceptions.
         """
         try:
-            unit_in = _get_unit_price(self.env, model or "", "input")
-            unit_out = _get_unit_price(self.env, model or "", "output")
+            unit_in, unit_out, known = _resolve_unit_prices(
+                self.env, model or "")
+            if not known:
+                _logger.warning(
+                    "daadit_ai_claude.usage: geen prijs bekend voor model "
+                    "%s; gerekend met het duurste tarief (%s / %s USD per "
+                    "1M). Vul de prijstabel aan.", model, unit_in, unit_out,
+                )
             vals = {
                 "kind": kind,
                 "model": model or "?",
@@ -172,6 +243,7 @@ class ClaudeUsage(models.Model):
                 "error": (error or "")[:8000] if error else False,
                 "unit_input_usd": unit_in,
                 "unit_output_usd": unit_out,
+                "price_fallback": not known,
             }
             with self.env.cr.savepoint():
                 self.sudo().create(vals)
