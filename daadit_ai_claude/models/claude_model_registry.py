@@ -45,10 +45,10 @@ class DaaditAiClaudeModel(models.Model):
     )
     last_synced = fields.Datetime(readonly=True)
 
-    _sql_constraints = [
-        ("technical_name_uniq", "unique(technical_name)",
-         "This Claude model id already exists in the registry."),
-    ]
+    _technical_name_uniq = models.Constraint(
+        "unique(technical_name)",
+        "This Claude model id already exists in the registry.",
+    )
 
     # ------------------------------------------------------------------ #
     # Selection source                                                   #

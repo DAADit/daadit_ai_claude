@@ -75,7 +75,7 @@ class AIAgent(models.Model):
     # Per-agent Claude overrides                                         #
     # ------------------------------------------------------------------ #
     daadit_claude_temperature_active = fields.Boolean(
-        string="Apply temperature override",
+        string="Apply Claude temperature override",
         default=False,
         help=(
             "When unticked, the agent's response_style controls the "
@@ -90,7 +90,7 @@ class AIAgent(models.Model):
         default=0.0,
         help=(
             "Override the temperature sent to Anthropic for THIS agent. "
-            "Effective only when 'Apply temperature override' is ticked. "
+            "Effective only when 'Apply Claude temperature override' is ticked. "
             "Range 0.0 – 1.0."
         ),
     )
