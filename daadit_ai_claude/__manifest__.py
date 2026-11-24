@@ -36,7 +36,9 @@ Features
   ``daadit_ai_claude.usage`` with token counts and an estimated cost
   (USD per 1M tokens, overridable via ICP).
 * **Settings UI** — adds a clearly-branded Anthropic provider block
-  under General Settings → AI.
+  as its own "Claude AI" section in Settings (Odoo 20 has no ``ai_app``
+  settings view to extend), and a standalone *Claude Agent Settings*
+  list under Settings for the per-agent fields.
 
 Notes
 -----
@@ -48,7 +50,7 @@ user/assistant turns, and tool calls travel as ``content`` blocks of
 out of that envelope so the rest of Odoo's AI plumbing (topics, tool
 actions, language mirroring) keeps working unchanged.
 """,
-    "version": "20.0.4.3.0",
+    "version": "20.0.4.4.0",
     "category": "Productivity/Discuss",
     "author": "DAADit",
     "website": "https://daadit.group",
@@ -56,7 +58,9 @@ actions, language mirroring) keeps working unchanged.
     "depends": [
         "base",
         "ai",
-        "ai_app",
+        # Odoo 20: ``ai_app`` bestaat niet meer. De views van deze module
+        # staan los (geen overerving van ai_app/ai_agentic), dus ``ai``
+        # volstaat om te installeren.
     ],
     "external_dependencies": {
         "python": ["requests"],

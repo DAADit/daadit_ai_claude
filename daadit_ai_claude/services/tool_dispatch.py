@@ -81,7 +81,7 @@ def _tool_name_to_method(tool_name: str) -> str:
     return _AI_TOOL_PREFIX + tool_name
 
 
-# Stock ai_app names a tool after its action's xml-id suffix
+# Stock ai (Odoo 19: ai_app) names a tool after its action's xml-id suffix
 # (``ir_actions_server_search``) or ``action_<id>`` when the action has
 # no xml-id (custom tools created in the UI).
 _ACTION_ID_RE = re.compile(r"^action_(\d+)$")
@@ -445,7 +445,7 @@ def normalize_tools(tools):
                 elif isinstance(val, str):
                     converted.append({"name": name, "description": val})
                 elif isinstance(val, (list, tuple)):
-                    # Stock ai_app's ``_get_ai_tools()`` format:
+                    # Stock ai (Odoo 19: ai_app) ``_get_ai_tools()`` format:
                     # {name: (description, allow_end_message, callable,
                     #         json_schema)}. Dropping the schema here is
                     # what made Claude see parameterless tools — keep it.

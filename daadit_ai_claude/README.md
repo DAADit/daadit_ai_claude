@@ -48,8 +48,10 @@ existing provider — no changes to your Sources setup required.
 
 ### Settings UI
 
-- Adds an **Anthropic** provider block under **Settings → General Settings →
-  AI** next to the other AI provider blocks.
+- Adds an **Anthropic** provider block as its own **Claude AI** section in
+  **Settings** (Odoo 20 has no `ai_app` settings view to extend).
+- Per-agent Claude fields live under **Settings → Claude Agent Settings**
+  (standalone views; nothing is inherited from `ai_app` / `ai_agentic`).
 - Toggle → key field → link to `console.anthropic.com`.
 - Advanced fields: base URL, API version, request timeout.
 - All values stored in `ir.config_parameter` under the `daadit_ai_claude.*`
@@ -57,13 +59,24 @@ existing provider — no changes to your Sources setup required.
 
 ## Install
 
+> **Odoo 20 — status of this branch.** The module installs with only the
+> stock `ai` module (`ai_app` no longer exists). That is *installability*,
+> not a functional port: Odoo 20's `ai.agent` has no `llm_model`,
+> `topic_ids` or `response_style`, there is no `ai.topic`, and no provider
+> keys in Settings. The `llm_model` field you see on an agent is created by
+> this module, and the provider patches (`_get_provider`,
+> `LLMApiService`) only take effect if those hooks still exist in Odoo 20.
+> Routing a stock Odoo 20 chat through Claude needs a separate port against
+> the Odoo 20 `ai` source.
+
+
 1. Copy the `daadit_ai_claude` folder into your Odoo addons path (Odoo.sh
    custom-addons repo, `extra_addons/`, or wherever your install expects
    custom modules to live).
 2. Restart the Odoo server (or trigger an Odoo.sh build).
 3. Open **Apps**, update the apps list, and install
    **DAADit AI — Claude (Anthropic) Provider**.
-4. Open **Settings → General Settings → AI**, toggle **Use your own Anthropic
+4. Open **Settings → Claude AI**, toggle **Use your own Anthropic
    account**, paste the key from <https://console.anthropic.com/settings/keys>,
    save.
 5. Edit (or create) an `ai.agent`, set **LLM Model** to one of the Claude
