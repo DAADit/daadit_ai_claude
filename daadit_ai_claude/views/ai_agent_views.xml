@@ -2,7 +2,7 @@
 <odoo>
 
     <!--
-        Inherit the stock ai.agent form (ai_app.ai_agent_view_form) and
+        Inherit the stock ai.agent form (ai_agentic.ai_agent_view_form) and
         append a "Claude provider settings" notebook tab. Only visible
         when the agent's llm_model is a Claude option.
     -->
@@ -10,7 +10,7 @@
     <record id="ai_agent_view_form_inherit_daadit_claude" model="ir.ui.view">
         <field name="name">ai.agent.view.form.inherit.daadit_ai_claude</field>
         <field name="model">ai.agent</field>
-        <field name="inherit_id" ref="ai_app.ai_agent_view_form"/>
+        <field name="inherit_id" ref="ai_agentic.ai_agent_view_form"/>
         <field name="arch" type="xml">
 
             <xpath expr="//form//sheet" position="inside">
