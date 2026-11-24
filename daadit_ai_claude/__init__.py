@@ -46,19 +46,31 @@ UPDATE ai_agent
 
 
 def _reset_claude_values(env):
-    """Run the SQL fix-ups on whichever tables exist."""
+    """Run the SQL fix-ups on whichever tables/columns exist.
+
+    Odoo 20: stock ``ai.agent`` has no ``llm_model`` column any more —
+    on a fresh install the column only appears once THIS module's
+    field is created, i.e. after ``pre_init_hook``. Running the UPDATE
+    unconditionally aborts the install with ``UndefinedColumn``, so we
+    check the column, not just the table.
+    """
     cr = env.cr
     cr.execute("""
-        SELECT table_name FROM information_schema.tables
+        SELECT 1 FROM information_schema.columns
          WHERE table_name = 'ai_agent'
+           AND column_name = 'llm_model'
     """)
-    tables = {row[0] for row in cr.fetchall()}
-    if 'ai_agent' in tables:
-        cr.execute(_RESET_LLM_SQL)
+    if not cr.fetchone():
         _logger.info(
-            "daadit_ai_claude: reset %d ai_agent.llm_model values to gpt-4o",
-            cr.rowcount,
+            "daadit_ai_claude: ai_agent.llm_model does not exist; "
+            "nothing to reset"
         )
+        return
+    cr.execute(_RESET_LLM_SQL)
+    _logger.info(
+        "daadit_ai_claude: reset %d ai_agent.llm_model values to gpt-4o",
+        cr.rowcount,
+    )
 
 
 def pre_init_hook(env):

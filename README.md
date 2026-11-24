@@ -1,6 +1,6 @@
 # daadit_ai_claude
 
-Odoo 19 Enterprise module — adds **Anthropic Claude** as an LLM provider for the
+Odoo Enterprise module — adds **Anthropic Claude** as an LLM provider for the
 built-in `ai` module, alongside OpenAI (ChatGPT) and Google (Gemini).
 
 The module folder lives at [`daadit_ai_claude/`](daadit_ai_claude/) — see the
@@ -10,6 +10,7 @@ instructions, and configuration reference.
 ## Branches
 
 - **`19.0`** — Odoo 19 Enterprise (current stable, used by the Odoo App Store)
+- **`20.0`** — Odoo 20 Enterprise (installs with only `ai`; see the module README for what is not ported yet)
 - **`main`** — latest development
 
 ## License

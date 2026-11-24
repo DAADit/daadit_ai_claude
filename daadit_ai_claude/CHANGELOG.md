@@ -1,5 +1,32 @@
 # Changelog — daadit_ai_claude
 
+## 20.0.4.4.0 — 2026-11-24
+
+Installeerbaar op Odoo 20 zonder `ai_app`.
+
+De build op Odoo 20 brak op `depends: ai_app`; die module bestaat daar
+niet meer. De views die we ervan erfden zijn dus ook weg, en de XML-id's
+van hun opvolgers in `ai_agentic` zijn niet na te gaan. Daarom erft de
+module niets meer van de AI-app:
+
+- `depends` is nu `base`, `ai`.
+- Agentform: eigen losstaande form/list/search voor `ai.agent` met alleen
+  eigen velden plus `name` en `active`, te vinden onder
+  **Settings → Claude Agent Settings** (alleen `base.group_system`).
+  Agents aanmaken of verwijderen kan daar niet; dat blijft bij Odoo zelf.
+- Instellingen: eigen blok **Claude AI** op
+  `base.res_config_settings_view_form` in plaats van in het
+  `ai_providers`-blok van `ai_app`.
+- `pre_init_hook`/`uninstall_hook` controleren of de kolom
+  `ai_agent.llm_model` bestaat. Op Odoo 20 heeft stock `ai.agent` dat veld
+  niet meer, en de onvoorwaardelijke `UPDATE` zou de installatie afbreken.
+
+Let op: dit maakt de module installeerbaar, niet functioneel geport.
+Odoo 20 kent op `ai.agent` geen `llm_model`, `topic_ids` of
+`response_style`, geen `ai.topic` en geen provider-keys in de
+instellingen. Of de patches op `_get_provider` en `LLMApiService` nog
+ergens op aangrijpen, moet tegen de Odoo 20-broncode worden nagegaan.
+
 ## 19.0.4.3.0 — 2026-07-26
 
 Een half rapport heet niet langer 'klaar'.
